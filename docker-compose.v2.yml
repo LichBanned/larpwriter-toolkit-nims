@@ -1,0 +1,57 @@
+# Server-only second stack (9443). Not committed — local/host deploy override.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    image: nims-v2-app:latest
+    container_name: nims-v2-app
+    restart: unless-stopped
+    volumes:
+      - nims-v2-data:/app/packages/nims-server/data
+    environment:
+      - NODE_ENV=production
+      - NIMS_SESSION_SECRET=${NIMS_SESSION_SECRET}
+      - NIMS_SESSION_KEY=${NIMS_SESSION_KEY:-nims_v2_sid}
+      - NIMS_ADMIN_LOGIN=${NIMS_ADMIN_LOGIN:-admin}
+      - NIMS_ADMIN_PASS=${NIMS_ADMIN_PASS:-}
+      - NIMS_ENSURE_ADMIN=${NIMS_ENSURE_ADMIN:-0}
+      - NIMS_COOKIE_SECURE=${NIMS_COOKIE_SECURE:-1}
+    expose:
+      - "3001"
+    networks:
+      - nims-v2
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:alpine
+    container_name: nims-v2-nginx
+    restart: unless-stopped
+    ports:
+      - "${NIMS_HTTPS_PORT:-9443}:443"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - larp-rules_certbot_conf:/etc/letsencrypt:ro
+    depends_on:
+      - app
+    networks:
+      - nims-v2
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  nims-v2-data:
+    name: nims-v2-data
+  larp-rules_certbot_conf:
+    external: true
+
+networks:
+  nims-v2:
+    name: nims-v2-net
