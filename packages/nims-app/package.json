@@ -15,6 +15,7 @@
     "nims-wp-watch-server": "webpack --watch --env.product=server",
     "watch:server": "webpack --watch --env product=server",
     "build:server": "webpack --env product=server mode=production",
+    "build:server-lowmem": "NODE_OPTIONS=--max-old-space-size=1536 webpack --env product=server mode=production lowmem=true",
     "nims-wp-build-server": "webpack --env.product=server",
     "nims-wp-build-stand": "webpack --env.product=standalone",
     "nims-wp-build-stand-stats": "webpack --env.product=standalone --env.mode=production --profile --json > stats.json",

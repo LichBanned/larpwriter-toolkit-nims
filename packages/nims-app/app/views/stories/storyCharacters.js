@@ -51,7 +51,14 @@ module.exports = (Stories) => {
     };
 
     exports.refresh = () => {
-        state.ExternalCharacterSelectors.forEach(U.clearEl);
+        state.ExternalCharacterSelectors.forEach((selector) => {
+            if (!selector) return;
+            const $sel = $(selector);
+            if ($sel.hasClass('select2-hidden-accessible')) {
+                $sel.select2('destroy');
+            }
+            U.clearEl(selector);
+        });
 
         U.clearEl(U.queryEl(`${root}.storyCharactersTable`));
 
@@ -87,8 +94,22 @@ module.exports = (Stories) => {
         const addData = UI.getSelect2Data(addArray);
         const removeData = UI.getSelect2Data(removeArray);
 
-        state.ExternalCharacterSelectors.forEach((selector) => {
-            $(selector).select2(addData);
+        // Force Select2 search; attach dropdown to modal so Bootstrap doesn't steal keypresses.
+        // First selector = "add character", second = "switch character".
+        state.ExternalCharacterSelectors.forEach((selector, idx) => {
+            if (!selector) return;
+            const $sel = $(selector);
+            if ($sel.hasClass('select2-hidden-accessible')) {
+                $sel.select2('destroy');
+            }
+            U.clearEl(selector);
+            const base = idx === 0 ? addData : removeData;
+            const modal = $sel.closest('.modal')[0];
+            $sel.select2(Object.assign({}, base, {
+                minimumResultsForSearch: 0,
+                width: 'style',
+                dropdownParent: modal ? $(modal) : $(document.body)
+            }));
         });
 
         const table = U.clearEl(U.queryEl(`${root}.storyCharactersTable`));

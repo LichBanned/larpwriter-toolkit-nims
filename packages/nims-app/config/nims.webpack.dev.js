@@ -147,16 +147,31 @@ const config = {
 };
 
 module.exports = (env, argv) => {
+    // Low-memory builds for small VPS: no minify, single-threaded, no source maps.
+    const lowmem = env.lowmem === true || env.lowmem === 'true';
+    if (lowmem) {
+        config.parallelism = 1;
+        config.devtool = false;
+        config.optimization = Object.assign({}, config.optimization, {
+            minimize: false,
+            splitChunks: false,
+        });
+    }
+
     switch (env.mode) {
     case 'production':
         config.mode = 'production';
+        if (lowmem) {
+            // Keep production DefinePlugin MODE=PROD, but skip Terser (main RAM hog).
+            config.optimization = Object.assign({}, config.optimization, { minimize: false });
+        }
         break;
     default:
         console.error(`Unknown mode "${env.mode}" switch to default: development. Use production or development.`);
     // eslint-disable-next-line no-fallthrough
     case 'dev':
     case 'development':
-        config.devtool = 'eval-cheap-source-map';
+        config.devtool = lowmem ? false : 'eval-cheap-source-map';
         // config.optimization = {
         //     // usedExports:true,
         //     // splitChunks: {

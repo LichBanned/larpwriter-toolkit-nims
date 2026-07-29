@@ -1,0 +1,33 @@
+FROM node:20
+
+WORKDIR /app
+
+# Install workspace deps from repository root so local packages
+# (nims-app-core, nims-dbms-core, nims-resources) are linked by lerna.
+COPY package.json package-lock.json* lerna.json ./
+COPY packages/nims-app-core/package.json packages/nims-app-core/
+COPY packages/nims-app/package.json packages/nims-app/
+COPY packages/nims-dbms-core/package.json packages/nims-dbms-core/
+COPY packages/nims-dbms/package.json packages/nims-dbms/
+COPY packages/nims-resources/package.json packages/nims-resources/
+COPY packages/nims-server/package.json packages/nims-server/
+
+RUN npm install
+RUN npm run bootstrap
+
+# Copy full sources after dependency install for better layer caching.
+COPY . .
+
+# IMPORTANT: do NOT run webpack here (OOM on small VPS).
+# Expect prebuilt frontend at packages/nims-app/dist (built with build:server-lowmem).
+RUN test -f packages/nims-app/dist/nims.html \
+  && test -f packages/nims-app/dist/index.html \
+  || (echo "ERROR: packages/nims-app/dist missing. Build locally: cd packages/nims-app && npm run build:server-lowmem" && exit 1)
+
+ENV NODE_ENV=production
+EXPOSE 3001
+
+WORKDIR /app/packages/nims-server
+CMD ["node", "./bin/www", \
+     "--configFile", "config/nims-frontend-prod.json", \
+     "--globalConfigFile", "config/nims-frontend-global.json"]
