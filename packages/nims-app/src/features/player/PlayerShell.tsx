@@ -15,6 +15,7 @@ import { useDisclosure } from '@mantine/hooks';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { AppCredits } from '@/components/AppCredits';
 import { useRootStore } from '@/stores';
 
 const playerNav = [
@@ -134,6 +135,10 @@ export const PlayerShell = observer(function PlayerShell({ children }: { childre
               Выйти
             </Button>
           </Stack>
+        </MantineAppShell.Section>
+        <MantineAppShell.Section mt="xs">
+          <Divider mb="xs" />
+          <AppCredits compact />
         </MantineAppShell.Section>
       </MantineAppShell.Navbar>
 

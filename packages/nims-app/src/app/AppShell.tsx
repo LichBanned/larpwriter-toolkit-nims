@@ -19,8 +19,10 @@ import { useTranslation } from 'react-i18next';
 import { observer } from 'mobx-react-lite';
 import { McpTokenModal } from '@/features/mcp/McpTokenModal';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { AppCredits } from '@/components/AppCredits';
 import { useRootStore } from '@/stores';
 import { useIsCompact } from '@/hooks/useIsCompact';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 type NavItem =
   | { path: string; labelKey: string; icon: string }
@@ -32,6 +34,15 @@ type NavSection = {
 };
 
 const navSections: NavSection[] = [
+  {
+    title: 'Обзор',
+    items: [
+      { path: '/', labelKey: 'nav.overview', icon: '📋' },
+      { path: '/timeline', labelKey: 'nav.timeline', icon: '⏱️' },
+      { path: '/network', labelKey: 'nav.network', icon: '🕸️' },
+      { path: '/role-grid', labelKey: 'nav.roleGrid', icon: '▦' },
+    ],
+  },
   {
     title: 'Люди',
     items: [
@@ -47,15 +58,6 @@ const navSections: NavSection[] = [
       { path: '/relations', labelKey: 'nav.relations', icon: '🔗' },
       { path: '/adaptations', labelKey: 'nav.adaptations', icon: '✍️' },
       { path: '/briefings', labelKey: 'nav.briefings', icon: '📄' },
-    ],
-  },
-  {
-    title: 'Обзор',
-    items: [
-      { path: '/', labelKey: 'nav.overview', icon: '📋' },
-      { path: '/timeline', labelKey: 'nav.timeline', icon: '⏱️' },
-      { path: '/network', labelKey: 'nav.network', icon: '🕸️' },
-      { path: '/role-grid', labelKey: 'nav.roleGrid', icon: '▦' },
     ],
   },
   {
@@ -94,6 +96,7 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
     },
   });
   const isCompact = useIsCompact();
+  const isMobile = useIsMobile();
   const collapsed = userCollapsed !== null ? userCollapsed : isCompact;
   const setCollapsed = (next: boolean) => setUserCollapsed(next);
   const navigate = useNavigate();
@@ -101,7 +104,9 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
   const { t } = useTranslation();
   const { auth, permissions } = useRootStore();
 
-  const navWidth = collapsed ? 64 : 220;
+  // Icon-only rail is for desktop/tablet compact only — never in the mobile drawer.
+  const iconOnly = collapsed && !isMobile;
+  const navWidth = iconOnly ? 64 : 220;
 
   const pageTitle = useMemo(() => {
     const item = allNavItems.find((n) => 'path' in n && n.path === location.pathname);
@@ -127,7 +132,7 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
   const renderNavItem = (item: NavItem) => {
     const key = 'path' in item ? item.path : item.action;
     const active = 'path' in item && location.pathname === item.path;
-    if (collapsed) {
+    if (iconOnly) {
       return (
         <Tooltip key={key} label={t(item.labelKey)} position="right" withArrow>
           <ActionIcon
@@ -225,8 +230,8 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
         <MantineAppShell.Section grow component={ScrollArea} type="scroll" offsetScrollbars>
           {navSections.map((section, sectionIndex) => (
             <Fragment key={section.title}>
-              {sectionIndex > 0 && <Divider my={collapsed ? 6 : 8} />}
-              {!collapsed && (
+              {sectionIndex > 0 && <Divider my={iconOnly ? 6 : 8} />}
+              {!iconOnly && (
                 <Text
                   size="xs"
                   c="dimmed"
@@ -261,6 +266,12 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
             </Button>
           </Stack>
         </MantineAppShell.Section>
+        {!iconOnly && (
+          <MantineAppShell.Section mt="xs">
+            <Divider mb="xs" />
+            <AppCredits compact />
+          </MantineAppShell.Section>
+        )}
       </MantineAppShell.Navbar>
 
       <MantineAppShell.Main>

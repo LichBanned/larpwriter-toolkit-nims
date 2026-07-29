@@ -10,6 +10,7 @@ import { useRootStore } from '@/stores';
 import { DoughnutList, Histogram, ProfileFieldChart, type HistBar } from './chartBits';
 import { GearsTab } from './GearsTab';
 import { SlidersTab } from './SlidersTab';
+import { AppCredits } from '@/components/AppCredits';
 
 type CompletenessTuple = [string, number, number];
 
@@ -178,6 +179,7 @@ function OverviewPage() {
               </Table>
             </Card>
           </Group>
+          <AppCredits />
         </Tabs.Panel>
 
         <Tabs.Panel value="stat-diagrams" pt="md">

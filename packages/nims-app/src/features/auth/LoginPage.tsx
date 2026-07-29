@@ -4,6 +4,7 @@ import {
 } from '@mantine/core';
 import { observer } from 'mobx-react-lite';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { AppCredits } from '@/components/AppCredits';
 import { useRootStore } from '@/stores';
 
 export const LoginPage = observer(function LoginPage() {
@@ -134,6 +135,8 @@ export const LoginPage = observer(function LoginPage() {
               </Stack>
             </form>
           )}
+
+          <AppCredits />
         </Stack>
       </Paper>
     </Center>
