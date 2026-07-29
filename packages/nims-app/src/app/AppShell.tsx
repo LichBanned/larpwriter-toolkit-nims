@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, Fragment } from 'react';
 import {
   AppShell as MantineAppShell,
   Burger,
@@ -26,23 +26,55 @@ type NavItem =
   | { path: string; labelKey: string; icon: string }
   | { action: 'mcp'; labelKey: string; icon: string };
 
-const navItems: NavItem[] = [
-  { path: '/', labelKey: 'nav.overview', icon: '📋' },
-  { path: '/characters', labelKey: 'nav.characters', icon: '👤' },
-  { path: '/players', labelKey: 'nav.players', icon: '🎮' },
-  { path: '/stories', labelKey: 'nav.stories', icon: '📖' },
-  { path: '/groups', labelKey: 'nav.groups', icon: '👥' },
-  { path: '/relations', labelKey: 'nav.relations', icon: '🔗' },
-  { path: '/adaptations', labelKey: 'nav.adaptations', icon: '✍️' },
-  { path: '/briefings', labelKey: 'nav.briefings', icon: '📄' },
-  { path: '/timeline', labelKey: 'nav.timeline', icon: '⏱️' },
-  { path: '/network', labelKey: 'nav.network', icon: '🕸️' },
-  { path: '/role-grid', labelKey: 'nav.roleGrid', icon: '▦' },
-  { path: '/profile-filter', labelKey: 'nav.profileFilter', icon: '🧰' },
-  { path: '/search', labelKey: 'nav.search', icon: '🔍' },
-  { action: 'mcp', labelKey: 'nav.mcp', icon: '🔌' },
-  { path: '/admin', labelKey: 'nav.admin', icon: '⚙️' },
+type NavSection = {
+  title: string;
+  items: NavItem[];
+};
+
+const navSections: NavSection[] = [
+  {
+    title: 'Люди',
+    items: [
+      { path: '/characters', labelKey: 'nav.characters', icon: '👤' },
+      { path: '/players', labelKey: 'nav.players', icon: '🎮' },
+    ],
+  },
+  {
+    title: 'Сюжет',
+    items: [
+      { path: '/stories', labelKey: 'nav.stories', icon: '📖' },
+      { path: '/groups', labelKey: 'nav.groups', icon: '👥' },
+      { path: '/relations', labelKey: 'nav.relations', icon: '🔗' },
+      { path: '/adaptations', labelKey: 'nav.adaptations', icon: '✍️' },
+      { path: '/briefings', labelKey: 'nav.briefings', icon: '📄' },
+    ],
+  },
+  {
+    title: 'Обзор',
+    items: [
+      { path: '/', labelKey: 'nav.overview', icon: '📋' },
+      { path: '/timeline', labelKey: 'nav.timeline', icon: '⏱️' },
+      { path: '/network', labelKey: 'nav.network', icon: '🕸️' },
+      { path: '/role-grid', labelKey: 'nav.roleGrid', icon: '▦' },
+    ],
+  },
+  {
+    title: 'Инструменты',
+    items: [
+      { path: '/profile-filter', labelKey: 'nav.profileFilter', icon: '🧰' },
+      { path: '/search', labelKey: 'nav.search', icon: '🔍' },
+      { action: 'mcp', labelKey: 'nav.mcp', icon: '🔌' },
+    ],
+  },
+  {
+    title: 'Админ',
+    items: [
+      { path: '/admin', labelKey: 'nav.admin', icon: '⚙️' },
+    ],
+  },
 ];
+
+const allNavItems = navSections.flatMap((s) => s.items);
 
 export const AppShell = observer(function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure();
@@ -72,7 +104,7 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
   const navWidth = collapsed ? 64 : 220;
 
   const pageTitle = useMemo(() => {
-    const item = navItems.find((n) => 'path' in n && n.path === location.pathname);
+    const item = allNavItems.find((n) => 'path' in n && n.path === location.pathname);
     return item ? t(item.labelKey) : 'NIMS';
   }, [location.pathname, t]);
 
@@ -90,6 +122,39 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
       return;
     }
     if ('path' in item) go(item.path);
+  };
+
+  const renderNavItem = (item: NavItem) => {
+    const key = 'path' in item ? item.path : item.action;
+    const active = 'path' in item && location.pathname === item.path;
+    if (collapsed) {
+      return (
+        <Tooltip key={key} label={t(item.labelKey)} position="right" withArrow>
+          <ActionIcon
+            variant={active ? 'filled' : 'subtle'}
+            size={44}
+            onClick={() => onNav(item)}
+            aria-label={t(item.labelKey)}
+            style={{ width: '100%', marginBottom: 4, minHeight: 44 }}
+          >
+            <span style={{ fontSize: 18 }}>{item.icon}</span>
+          </ActionIcon>
+        </Tooltip>
+      );
+    }
+    return (
+      <NavLink
+        key={key}
+        label={t(item.labelKey)}
+        leftSection={<span aria-hidden style={{ fontSize: 18 }}>{item.icon}</span>}
+        active={active}
+        onClick={() => onNav(item)}
+        styles={{
+          root: { minHeight: 44, borderRadius: 8, marginBottom: 2 },
+          label: { fontSize: 'var(--mantine-font-size-sm)' },
+        }}
+      />
+    );
   };
 
   return (
@@ -133,7 +198,7 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
             <Text fw={700} size="lg" style={{ cursor: 'pointer', flexShrink: 0 }} onClick={() => go('/')}>
               NIMS
             </Text>
-            <Text size="sm" c="dimmed" truncate hiddenFrom="md" style={{ minWidth: 0 }}>
+            <Text size="sm" c="dimmed" truncate style={{ minWidth: 0 }}>
               {pageTitle}
             </Text>
           </Group>
@@ -158,38 +223,25 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
 
       <MantineAppShell.Navbar p="xs">
         <MantineAppShell.Section grow component={ScrollArea} type="scroll" offsetScrollbars>
-          {navItems.map((item) => {
-            const key = 'path' in item ? item.path : item.action;
-            const active = 'path' in item && location.pathname === item.path;
-            if (collapsed) {
-              return (
-                <Tooltip key={key} label={t(item.labelKey)} position="right" withArrow>
-                  <ActionIcon
-                    variant={active ? 'filled' : 'subtle'}
-                    size={44}
-                    onClick={() => onNav(item)}
-                    aria-label={t(item.labelKey)}
-                    style={{ width: '100%', marginBottom: 4, minHeight: 44 }}
-                  >
-                    <span style={{ fontSize: 18 }}>{item.icon}</span>
-                  </ActionIcon>
-                </Tooltip>
-              );
-            }
-            return (
-              <NavLink
-                key={key}
-                label={t(item.labelKey)}
-                leftSection={<span aria-hidden style={{ fontSize: 18 }}>{item.icon}</span>}
-                active={active}
-                onClick={() => onNav(item)}
-                styles={{
-                  root: { minHeight: 44, borderRadius: 8, marginBottom: 2 },
-                  label: { fontSize: 'var(--mantine-font-size-sm)' },
-                }}
-              />
-            );
-          })}
+          {navSections.map((section, sectionIndex) => (
+            <Fragment key={section.title}>
+              {sectionIndex > 0 && <Divider my={collapsed ? 6 : 8} />}
+              {!collapsed && (
+                <Text
+                  size="xs"
+                  c="dimmed"
+                  tt="uppercase"
+                  fw={600}
+                  px="xs"
+                  mb={4}
+                  style={{ letterSpacing: '0.04em' }}
+                >
+                  {section.title}
+                </Text>
+              )}
+              {section.items.map(renderNavItem)}
+            </Fragment>
+          ))}
         </MantineAppShell.Section>
         <MantineAppShell.Section hiddenFrom="md" mt="xs">
           <Divider mb="sm" />

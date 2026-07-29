@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import {
   AppShell as MantineAppShell,
   Group,
@@ -8,6 +8,8 @@ import {
   Burger,
   Divider,
   Stack,
+  Tooltip,
+  Box,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -90,9 +92,8 @@ export const PlayerShell = observer(function PlayerShell({ children }: { childre
         <MantineAppShell.Section grow>
           {playerNav.map((item) => {
             const disabled = !item.always && !hasCharacter;
-            return (
+            const link = (
               <NavLink
-                key={item.path}
                 label={item.label}
                 leftSection={<span aria-hidden style={{ fontSize: 18 }}>{item.icon}</span>}
                 active={location.pathname === item.path}
@@ -102,6 +103,17 @@ export const PlayerShell = observer(function PlayerShell({ children }: { childre
                   root: { minHeight: 44, borderRadius: 8, marginBottom: 2 },
                 }}
               />
+            );
+            if (!disabled) return <Fragment key={item.path}>{link}</Fragment>;
+            return (
+              <Tooltip
+                key={item.path}
+                label="Персонаж ещё не привязан к вашему профилю"
+                position="right"
+                withArrow
+              >
+                <Box>{link}</Box>
+              </Tooltip>
             );
           })}
         </MantineAppShell.Section>

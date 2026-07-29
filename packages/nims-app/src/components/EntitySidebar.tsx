@@ -21,6 +21,8 @@ export interface EntitySidebarProps {
   owners?: Record<string, string>;
   /** Show group-by-owner toggle (default true when owners provided) */
   allowGroupByOwner?: boolean;
+  /** Content above the search field (e.g. status filter chips) */
+  header?: ReactNode;
   footer?: ReactNode;
   width?: number;
   /** Full-width list (mobile master stack) */
@@ -62,12 +64,13 @@ export function EntitySidebar({
   statusLegend,
   owners,
   allowGroupByOwner,
+  header,
   footer,
   width,
   fullWidth = false,
 }: EntitySidebarProps) {
   const isMobile = useIsMobile();
-  const listWidth = width ?? 220;
+  const listWidth = width ?? 240;
   const [groupByOwner, setGroupByOwner] = useState(false);
   const showOwnerUi = !!owners && (allowGroupByOwner !== false);
 
@@ -107,10 +110,12 @@ export function EntitySidebar({
     const meta = status ? STATUS_META[status] : null;
     const owner = owners?.[name] || '';
 
+    const isSelected = selected === name;
+
     return (
       <Button
         key={name}
-        variant={selected === name ? 'filled' : 'light'}
+        variant="default"
         size="sm"
         fullWidth
         justify="space-between"
@@ -120,6 +125,17 @@ export function EntitySidebar({
           root: {
             ...listItemStyles.root,
             paddingInline: 12,
+            // Neutral selected state: theme text on hover bg — no blue-on-blue
+            background: isSelected
+              ? 'var(--mantine-color-default-hover)'
+              : undefined,
+            borderColor: isSelected
+              ? 'var(--mantine-color-gray-5)'
+              : undefined,
+            boxShadow: isSelected
+              ? 'inset 3px 0 0 var(--mantine-color-blue-6)'
+              : undefined,
+            color: 'var(--mantine-color-text)',
           },
           inner: {
             justifyContent: 'space-between',
@@ -130,14 +146,16 @@ export function EntitySidebar({
             flex: 1,
             minWidth: 0,
             width: '100%',
+            color: 'inherit',
           },
         }}
       >
         <Group gap="sm" wrap="nowrap" justify="space-between" style={{ width: '100%' }}>
           <Text
             size="sm"
-            fw={selected === name ? 600 : 500}
+            fw={isSelected ? 600 : 500}
             truncate
+            c="inherit"
             style={{ flex: 1, minWidth: 0, textAlign: 'left' }}
           >
             {name}
@@ -145,19 +163,19 @@ export function EntitySidebar({
           <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
             {showOwnerUi && !groupByOwner && (
               owner ? (
-                <Tooltip label={owner} withArrow>
+                <Tooltip label={`Владелец: ${owner}`} withArrow>
                   <Badge
                     size="xs"
-                    color={selected === name ? 'gray' : ownerColor(owner)}
-                    variant={selected === name ? 'white' : 'light'}
-                    maw={80}
-                    style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    color={ownerColor(owner)}
+                    variant="light"
+                    maw={88}
+                    style={{ overflow: 'hidden', textOverflow: 'ellipsis', textTransform: 'none' }}
                   >
                     {owner}
                   </Badge>
                 </Tooltip>
               ) : (
-                <Badge size="xs" color="gray" variant={selected === name ? 'white' : 'outline'}>
+                <Badge size="xs" color="gray" variant="outline" style={{ textTransform: 'none' }}>
                   —
                 </Badge>
               )
@@ -196,6 +214,7 @@ export function EntitySidebar({
       }}
     >
       <Stack gap={4} style={{ flex: 1, minHeight: 0 }}>
+        {header}
         <TextInput
           size="sm"
           placeholder={showOwnerUi ? 'Поиск по имени или владельцу…' : 'Поиск…'}

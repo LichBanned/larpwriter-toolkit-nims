@@ -173,18 +173,16 @@ function RelationsPage() {
     return list.filter((p) => p.other.toLowerCase().includes(q));
   }, [charRelations, selectedChar, partnerFilter, knownCharacters]);
 
-  // Keep partner selection valid when character/list changes.
-  // Wide: auto-focus first partner (3-column layout).
-  // Compact/phone: stay on the partners list until the user picks one.
+  // Keep partner selection valid; never auto-pick (2-pane: list OR editor).
   useEffect(() => {
     if (!selectedChar) {
       setSelectedPartner(null);
       return;
     }
+    if (!selectedPartner) return;
     const names = charRelations.map(getOther);
-    if (selectedPartner && names.includes(selectedPartner)) return;
-    setSelectedPartner(isCompact ? null : (names[0] || null));
-  }, [selectedChar, relations, isCompact]);
+    if (!names.includes(selectedPartner)) setSelectedPartner(null);
+  }, [selectedChar, charRelations, selectedPartner]);
 
   const active = partners.find((p) => p.other === selectedPartner) || null;
   const activeRel = active?.rel || null;
@@ -295,7 +293,7 @@ function RelationsPage() {
         <Text size="sm" c="dimmed" mt={4}>
           {isCompact
             ? 'Персонаж → партнёр → редактор пары.'
-            : 'Слева — персонаж. В центре — с кем есть связь. Справа — редактор одной пары.'}
+            : 'Слева — персонажи. Дальше выберите партнёра и правьте одну связь.'}
         </Text>
       </div>
 
@@ -316,7 +314,11 @@ function RelationsPage() {
             setAddUnknown(null);
           }}
           emptySelectTitle="Выберите персонажа"
-          emptySelectDescription="Слева — персонажи. Дальше выберите партнёра и правьте одну связь."
+          emptySelectDescription={
+            isCompact
+              ? 'Дальше выберите партнёра и правьте одну связь.'
+              : 'Слева — персонажи. Дальше выберите партнёра и правьте одну связь.'
+          }
           sidebar={{
             items: charNames,
             selected: selectedChar,
@@ -340,7 +342,7 @@ function RelationsPage() {
               </Group>
               <PermissionHint reason={editBlockedReason} />
 
-              {isCompact && selectedPartner && (
+              {selectedPartner && (
                 <Group gap="xs">
                   <Button
                     variant="subtle"
@@ -358,11 +360,12 @@ function RelationsPage() {
                 </Group>
               )}
 
-              {/* Add controls + dossier — hide on compact when editing a pair */}
-              {(!isCompact || !selectedPartner) && (
-              <Card withBorder padding="sm">
-                <Stack gap="sm">
-                  <Group align="flex-end" grow preventGrowOverflow={false} wrap="wrap">
+              {/* Add controls + dossier — hide while editing a pair */}
+              {!selectedPartner && (
+              <Card withBorder padding="xs" radius="md">
+                <Stack gap={6}>
+                  <Text size="xs" fw={600} c="dimmed">Добавить</Text>
+                  <Group align="flex-end" grow preventGrowOverflow={false} wrap="wrap" gap="xs">
                     <Select
                       size="xs"
                       label="Известные по историям"
@@ -375,10 +378,11 @@ function RelationsPage() {
                       clearable
                       disabled={knownCandidates.length === 0}
                       nothingFoundMessage="Пусто"
-                      style={{ minWidth: 200, flex: 1 }}
+                      styles={{ description: { marginBottom: 2 } }}
+                      style={{ minWidth: 160, flex: 1 }}
                     />
                     <Button
-                      size="xs"
+                      size="compact-xs"
                       onClick={() => createWith(addKnown)}
                       disabled={!addKnown || !canEditSelected}
                       style={{ alignSelf: 'flex-end' }}
@@ -386,7 +390,7 @@ function RelationsPage() {
                       Добавить
                     </Button>
                   </Group>
-                  <Group align="flex-end" grow preventGrowOverflow={false} wrap="wrap">
+                  <Group align="flex-end" grow preventGrowOverflow={false} wrap="wrap" gap="xs">
                     <Select
                       size="xs"
                       label="Неизвестные по историям"
@@ -399,10 +403,11 @@ function RelationsPage() {
                       clearable
                       disabled={unknownCandidates.length === 0}
                       nothingFoundMessage="Пусто"
-                      style={{ minWidth: 200, flex: 1 }}
+                      styles={{ description: { marginBottom: 2 } }}
+                      style={{ minWidth: 160, flex: 1 }}
                     />
                     <Button
-                      size="xs"
+                      size="compact-xs"
                       variant="light"
                       onClick={() => createWith(addUnknown)}
                       disabled={!addUnknown || !canEditSelected}
@@ -420,25 +425,23 @@ function RelationsPage() {
                     onChange={setDossierField}
                     searchable
                     disabled={dossierOptions.length === 0}
-                    style={{ maxWidth: 320 }}
+                    styles={{ description: { marginBottom: 2 } }}
+                    style={{ maxWidth: 280 }}
                   />
                 </Stack>
               </Card>
               )}
 
-              <Group align="start" wrap={isCompact ? 'wrap' : 'nowrap'} gap="md">
-                {/* Partner list */}
-                {(!isCompact || !selectedPartner) && (
+              <Stack gap="md">
+                {/* Partner list — full width of detail pane when no partner selected */}
+                {!selectedPartner && (
                 <Card
                   withBorder
                   padding="sm"
                   style={{
-                    width: isCompact ? '100%' : 220,
-                    minWidth: isCompact ? 0 : 180,
-                    maxWidth: isCompact ? 'none' : 280,
-                    flexShrink: 0,
+                    width: '100%',
+                    maxWidth: 480,
                     alignSelf: 'stretch',
-                    resize: isCompact ? undefined : 'horizontal',
                     overflow: 'auto' }}
                 >
                   <Stack gap="sm">
@@ -469,13 +472,19 @@ function RelationsPage() {
                             style={{
                               padding: '8px 10px',
                               borderRadius: 6,
-                              border: '1px solid var(--mantine-color-default-border)',
-                              background: activeItem ? 'var(--mantine-color-blue-light)' : undefined,
-                              textAlign: 'left' }}
+                              border: activeItem
+                                ? '1px solid var(--mantine-color-gray-6)'
+                                : '1px solid var(--mantine-color-default-border)',
+                              background: activeItem
+                                ? 'var(--mantine-color-default-hover)'
+                                : undefined,
+                              textAlign: 'left',
+                              color: 'var(--mantine-color-text)',
+                            }}
                           >
                             <Group justify="space-between" wrap="nowrap" gap={6} align="flex-start">
                               <div style={{ minWidth: 0 }}>
-                                <Text size="md" fw={activeItem ? 600 : 400} style={{ whiteSpace: 'normal' }}>
+                                <Text size="md" fw={activeItem ? 600 : 400} c="inherit" style={{ whiteSpace: 'normal' }}>
                                   {p.other}
                                   {player ? ` / ${player}` : ''}
                                 </Text>
@@ -504,174 +513,165 @@ function RelationsPage() {
                 </Card>
                 )}
 
-                {/* Focused editor */}
-                {(!isCompact || !!selectedPartner) && (
-                <Stack gap="md" style={{ flex: 1, minWidth: 0, width: isCompact ? '100%' : undefined }}>
-                  {!activeRel || !selectedPartner ? (
-                    <EmptyState
-                      title="Выберите партнёра"
-                      description="Слева список связей выбранного персонажа. Кликните имя — откроется редактор."
-                    />
-                  ) : (
-                    <>
-                      <Group justify="space-between" align="flex-start">
-                        <div>
-                          <Title order={4}>
-                            <CharacterLink name={selectedChar} />
-                            {' ↔ '}
-                            <CharacterLink name={selectedPartner} />
-                            {partnerPlayer ? (
-                              <Text span size="sm" c="dimmed" fw={400}>
-                                {` / ${partnerPlayer}`}
-                              </Text>
-                            ) : null}
-                          </Title>
-                          <Text size="xs" c="dimmed" mt={4}>
-                            Редактируется одна пара. Сохранение текстов — при уходе с поля.
+                {/* Focused editor — replaces partner list when a pair is open */}
+                {selectedPartner && activeRel && active && (
+                <Stack gap="md" style={{ flex: 1, minWidth: 0, width: '100%' }}>
+                  <Group justify="space-between" align="flex-start">
+                    <div>
+                      <Title order={4}>
+                        <CharacterLink name={selectedChar} />
+                        {' ↔ '}
+                        <CharacterLink name={selectedPartner} />
+                        {partnerPlayer ? (
+                          <Text span size="sm" c="dimmed" fw={400}>
+                            {` / ${partnerPlayer}`}
                           </Text>
-                        </div>
-                      </Group>
+                        ) : null}
+                      </Title>
+                      <Text size="xs" c="dimmed" mt={4}>
+                        Редактируется одна пара. Сохранение текстов — при уходе с поля.
+                      </Text>
+                    </div>
+                  </Group>
 
-                      <Card withBorder padding="sm">
-                        <Stack gap={6}>
-                          <div>
-                            <Text size="xs" c="dimmed">Где встречались</Text>
-                            <Text size="sm">
-                              {(active.sharedStories.length
-                                ? active.sharedStories.join(', ')
-                                : 'Нет общих событий в историях')}
-                            </Text>
-                          </div>
-                          {dossierField && (
-                            <div>
-                              <Text size="xs" c="dimmed">{dossierField}</Text>
-                              <Text size="sm">{partnerProfileValue}</Text>
-                            </div>
-                          )}
-                        </Stack>
-                      </Card>
-
-                      <Card withBorder padding="md">
-                        <Text size="md" fw={600} mb={4}>Характер связи</Text>
-                        <Text size="sm" c="dimmed" mb="sm">
-                          Флаги направления. Можно отметить несколько.
+                  <Card withBorder padding="sm">
+                    <Stack gap={6}>
+                      <div>
+                        <Text size="xs" c="dimmed">Где встречались</Text>
+                        <Text size="sm">
+                          {(active.sharedStories.length
+                            ? active.sharedStories.join(', ')
+                            : 'Нет общих событий в историях')}
                         </Text>
-                        {(() => {
-                          const keys = relativeEssence(activeRel);
-                          const essence = activeRel.essence || [];
-                          const options: Array<{ key: RelEssence; label: string }> = [
-                            {
-                              key: keys.toOther,
-                              label: `Активное отношение «${selectedChar}» к «${selectedPartner}»` },
-                            {
-                              key: keys.allies,
-                              label: 'Союзники' },
-                            {
-                              key: keys.fromOther,
-                              label: `Активное отношение «${selectedPartner}» к «${selectedChar}»` },
-                          ];
-                          return (
-                            <Stack gap="sm">
-                              {options.map((opt) => (
-                                <Checkbox
-                                  key={opt.key}
-                                  size="md"
-                                  checked={essence.includes(opt.key)}
-                                  onChange={() => handleEssenceToggle(activeRel, opt.key)}
-                                  label={opt.label}
-                                  styles={{
-                                    label: { fontSize: '1rem', lineHeight: 1.45 },
-                                  }}
-                                />
-                              ))}
-                            </Stack>
-                          );
-                        })()}
-                      </Card>
+                      </div>
+                      {dossierField && (
+                        <div>
+                          <Text size="xs" c="dimmed">{dossierField}</Text>
+                          <Text size="sm">{partnerProfileValue}</Text>
+                        </div>
+                      )}
+                    </Stack>
+                  </Card>
 
-                      <Textarea key={`${activeRel.starter}-${activeRel.ender}-origin`}
-                        label="Суть отношений (общий текст для обоих)"
-                        description="Видно мастерам; не путать с личными текстами вводных"
-                        defaultValue={activeRel.origin || ''}
-                        rows={4}
+                  <Card withBorder padding="md">
+                    <Text size="md" fw={600} mb={4}>Характер связи</Text>
+                    <Text size="sm" c="dimmed" mb="sm">
+                      Флаги направления. Можно отметить несколько.
+                    </Text>
+                    {(() => {
+                      const keys = relativeEssence(activeRel);
+                      const essence = activeRel.essence || [];
+                      const options: Array<{ key: RelEssence; label: string }> = [
+                        {
+                          key: keys.toOther,
+                          label: `Активное отношение «${selectedChar}» к «${selectedPartner}»` },
+                        {
+                          key: keys.allies,
+                          label: 'Союзники' },
+                        {
+                          key: keys.fromOther,
+                          label: `Активное отношение «${selectedPartner}» к «${selectedChar}»` },
+                      ];
+                      return (
+                        <Stack gap="sm">
+                          {options.map((opt) => (
+                            <Checkbox
+                              key={opt.key}
+                              size="md"
+                              checked={essence.includes(opt.key)}
+                              onChange={() => handleEssenceToggle(activeRel, opt.key)}
+                              label={opt.label}
+                              styles={{
+                                label: { fontSize: '1rem', lineHeight: 1.45 },
+                              }}
+                            />
+                          ))}
+                        </Stack>
+                      );
+                    })()}
+                  </Card>
+
+                  <Textarea key={`${activeRel.starter}-${activeRel.ender}-origin`}
+                    label="Суть отношений (общий текст для обоих)"
+                    description="Видно мастерам; не путать с личными текстами вводных"
+                    defaultValue={activeRel.origin || ''}
+                    rows={4}
+                    readOnly={!canEditSelected}
+                    styles={{
+                      label: { fontSize: '1rem' },
+                      description: { fontSize: '0.9rem' },
+                      input: { fontSize: '1.1rem', lineHeight: 1.55 },
+                    }}
+                    onBlur={(e) => handleOriginSave(activeRel, e.currentTarget.value)}
+                  />
+
+                  <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+                    <Card withBorder padding="sm">
+                      <Stack gap="xs" mb="xs">
+                        <Text size="md" fw={600}>
+                          От <CharacterLink name={selectedChar} size="md" />
+                        </Text>
+                        <SegmentedControl
+                          size="md"
+                          fullWidth={isMobile}
+                          value={active.myReady ? 'ready' : 'draft'}
+                          onChange={(v) => handleReadyToggle(activeRel, selectedChar, v === 'ready')}
+                          color={active.myReady ? 'green' : undefined}
+                          disabled={!canEditSelected}
+                          data={[
+                            { value: 'draft', label: 'Черновик' },
+                            { value: 'ready', label: 'Готово' },
+                          ]}
+                        />
+                      </Stack>
+                      <Textarea key={`${activeRel.starter}-${activeRel.ender}-my-${selectedChar}`}
+                        placeholder={`Отношение ${selectedChar} к ${selectedPartner}…`}
+                        defaultValue={String(activeRel[selectedChar] || '')}
+                        rows={isMobile ? 12 : 8}
                         readOnly={!canEditSelected}
-                        styles={{
-                          label: { fontSize: '1rem' },
-                          description: { fontSize: '0.9rem' },
-                          input: { fontSize: '1.1rem', lineHeight: 1.55 },
-                        }}
-                        onBlur={(e) => handleOriginSave(activeRel, e.currentTarget.value)}
+                        styles={{ input: { fontSize: '1.1rem', lineHeight: 1.55 } }}
+                        onBlur={(e) => handleTextSave(activeRel, selectedChar, e.currentTarget.value)}
                       />
+                    </Card>
 
-                      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-                        <Card withBorder padding="sm">
-                          <Stack gap="xs" mb="xs">
-                            <Text size="md" fw={600}>
-                              От <CharacterLink name={selectedChar} size="md" />
-                            </Text>
-                            <SegmentedControl
-                              size="md"
-                              fullWidth={isMobile}
-                              value={active.myReady ? 'ready' : 'draft'}
-                              onChange={(v) => handleReadyToggle(activeRel, selectedChar, v === 'ready')}
-                              color={active.myReady ? 'green' : undefined}
-                              disabled={!canEditSelected}
-                              data={[
-                                { value: 'draft', label: 'Черновик' },
-                                { value: 'ready', label: 'Готово' },
-                              ]}
-                            />
-                          </Stack>
-                          <Textarea key={`${activeRel.starter}-${activeRel.ender}-my-${selectedChar}`}
-                            placeholder={`Отношение ${selectedChar} к ${selectedPartner}…`}
-                            defaultValue={String(activeRel[selectedChar] || '')}
-                            rows={isMobile ? 12 : 8}
-                            readOnly={!canEditSelected}
-                            styles={{ input: { fontSize: '1.1rem', lineHeight: 1.55 } }}
-                            onBlur={(e) => handleTextSave(activeRel, selectedChar, e.currentTarget.value)}
-                          />
-                        </Card>
-
-                        <Card withBorder padding="sm">
-                          <Stack gap="xs" mb="xs">
-                            <Text size="md" fw={600}>
-                              От <CharacterLink name={selectedPartner} size="md" />
-                            </Text>
-                            <SegmentedControl
-                              size="md"
-                              fullWidth={isMobile}
-                              value={active.theirReady ? 'ready' : 'draft'}
-                              onChange={(v) => handleReadyToggle(activeRel, selectedPartner, v === 'ready')}
-                              color={active.theirReady ? 'green' : undefined}
-                              disabled={!canEditSelected}
-                              data={[
-                                { value: 'draft', label: 'Черновик' },
-                                { value: 'ready', label: 'Готово' },
-                              ]}
-                            />
-                          </Stack>
-                          <Textarea key={`${activeRel.starter}-${activeRel.ender}-their-${selectedPartner}`}
-                            placeholder={`Отношение ${selectedPartner} к ${selectedChar}…`}
-                            defaultValue={String(activeRel[selectedPartner] || '')}
-                            rows={isMobile ? 12 : 8}
-                            readOnly={!canEditSelected}
-                            styles={{ input: { fontSize: '1.1rem', lineHeight: 1.55 } }}
-                            onBlur={(e) => handleTextSave(activeRel, selectedPartner, e.currentTarget.value)}
-                          />
-                        </Card>
-                      </SimpleGrid>
-
-                      <DeleteEntityButton
-                        entityLabel="отношение"
-                        entityName={`${activeRel.starter} ↔ ${activeRel.ender}`}
-                        onConfirm={() => handleRemove(activeRel)}
-                        disabled={!canEditSelected}
+                    <Card withBorder padding="sm">
+                      <Stack gap="xs" mb="xs">
+                        <Text size="md" fw={600}>
+                          От <CharacterLink name={selectedPartner} size="md" />
+                        </Text>
+                        <SegmentedControl
+                          size="md"
+                          fullWidth={isMobile}
+                          value={active.theirReady ? 'ready' : 'draft'}
+                          onChange={(v) => handleReadyToggle(activeRel, selectedPartner, v === 'ready')}
+                          color={active.theirReady ? 'green' : undefined}
+                          disabled={!canEditSelected}
+                          data={[
+                            { value: 'draft', label: 'Черновик' },
+                            { value: 'ready', label: 'Готово' },
+                          ]}
+                        />
+                      </Stack>
+                      <Textarea key={`${activeRel.starter}-${activeRel.ender}-their-${selectedPartner}`}
+                        placeholder={`Отношение ${selectedPartner} к ${selectedChar}…`}
+                        defaultValue={String(activeRel[selectedPartner] || '')}
+                        rows={isMobile ? 12 : 8}
+                        readOnly={!canEditSelected}
+                        styles={{ input: { fontSize: '1.1rem', lineHeight: 1.55 } }}
+                        onBlur={(e) => handleTextSave(activeRel, selectedPartner, e.currentTarget.value)}
                       />
-                    </>
-                  )}
+                    </Card>
+                  </SimpleGrid>
+
+                  <DeleteEntityButton
+                    entityLabel="отношение"
+                    entityName={`${activeRel.starter} ↔ ${activeRel.ender}`}
+                    onConfirm={() => handleRemove(activeRel)}
+                    disabled={!canEditSelected}
+                  />
                 </Stack>
                 )}
-              </Group>
+              </Stack>
             </Stack>
           )}
         </EntityPageLayout>

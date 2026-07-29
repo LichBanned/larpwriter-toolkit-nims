@@ -180,7 +180,7 @@ function CharactersPage() {
               selected={selected}
               onMobileBack={() => setSelected(null)}
               emptySelectTitle="Выберите персонажа"
-              emptySelectDescription="Слева — список. Кликните имя, чтобы открыть профиль."
+              emptySelectDescription="Кликните имя в списке, чтобы открыть профиль."
               sidebar={{
                 items: names,
                 selected,

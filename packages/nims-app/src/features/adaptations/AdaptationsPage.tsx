@@ -15,6 +15,53 @@ import { useEntityOwners } from '@/hooks/useEntityOwners';
 import { PermissionHint } from '@/components/PermissionHint';
 import { useIsMobile } from '@/hooks/useIsMobile';
 
+function CharFilterChip({
+  label,
+  active,
+  badge,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  badge?: number;
+  onClick: () => void;
+}) {
+  return (
+    <UnstyledButton
+      type="button"
+      onClick={onClick}
+      title={label}
+      style={{
+        padding: '6px 12px',
+        borderRadius: 6,
+        border: active
+          ? '2px solid var(--mantine-color-gray-7)'
+          : '1px solid var(--mantine-color-default-border)',
+        background: active
+          ? 'var(--mantine-color-default-hover)'
+          : 'var(--mantine-color-body)',
+        fontWeight: active ? 700 : 400,
+        fontSize: 13,
+        maxWidth: 160,
+        flexShrink: 0,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        minHeight: 36,
+        color: 'var(--mantine-color-text)',
+        cursor: 'pointer',
+      }}
+    >
+      <Text span size="sm" c="inherit" truncate style={{ maxWidth: 120 }}>
+        {label}
+      </Text>
+      {badge != null && badge > 0 && (
+        <Text span size="xs" c="orange" fw={700} style={{ flexShrink: 0 }}>{badge}</Text>
+      )}
+    </UnstyledButton>
+  );
+}
+
 interface StoryEvent {
   name: string;
   text: string;
@@ -145,7 +192,7 @@ function AdaptationsPage() {
           loading={loading}
           onMobileBack={() => { setSelectedStory(null); setSelectedChar(null); }}
           emptySelectTitle="Выберите историю"
-          emptySelectDescription="Слева — истории. Справа — адаптации событий по персонажам."
+          emptySelectDescription="Выберите историю — адаптации событий по персонажам."
           sidebar={{
             items: storyNames,
             selected: selectedStory,
@@ -174,43 +221,39 @@ function AdaptationsPage() {
 
               {storyChars.length > 0 && (
                 <Stack gap={6}>
-                  <Text size="sm" c="dimmed">Персонаж</Text>
-                  <Group gap="xs">
-                    <UnstyledButton
-                      onClick={() => setSelectedChar(null)}
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: 6,
-                        border: '1px solid var(--mantine-color-default-border)',
-                        background: !selectedChar ? 'var(--mantine-color-blue-light)' : undefined,
-                        fontWeight: !selectedChar ? 600 : 400,
-                        fontSize: 13 }}
-                    >
-                      Все
-                    </UnstyledButton>
-                    {storyChars.map((name) => {
-                      const active = selectedChar === name;
-                      const left = unfinishedByChar[name] || 0;
-                      return (
-                        <UnstyledButton
-                          key={name}
-                          onClick={() => setSelectedChar(active ? null : name)}
-                          style={{
-                            padding: '4px 10px',
-                            borderRadius: 6,
-                            border: '1px solid var(--mantine-color-default-border)',
-                            background: active ? 'var(--mantine-color-blue-light)' : undefined,
-                            fontWeight: active ? 600 : 400,
-                            fontSize: 13 }}
-                        >
-                          {name}
-                          {left > 0 && (
-                            <Text span size="xs" c="orange" ml={6}>{left}</Text>
-                          )}
-                        </UnstyledButton>
-                      );
-                    })}
+                  <Group gap="sm" justify="space-between" wrap="wrap">
+                    <Text size="sm" c="dimmed">Фильтр по персонажу</Text>
+                    {selectedChar && (
+                      <Text size="sm" fw={600}>
+                        Показан: {selectedChar}
+                      </Text>
+                    )}
                   </Group>
+                  {/* Native overflow — ScrollArea was eating chip clicks */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: 8,
+                      maxHeight: storyChars.length > 12 ? 120 : undefined,
+                      overflowY: storyChars.length > 12 ? 'auto' : undefined,
+                    }}
+                  >
+                    <CharFilterChip
+                      label="Все"
+                      active={!selectedChar}
+                      onClick={() => setSelectedChar(null)}
+                    />
+                    {storyChars.map((name) => (
+                      <CharFilterChip
+                        key={name}
+                        label={name}
+                        active={selectedChar === name}
+                        badge={unfinishedByChar[name] || 0}
+                        onClick={() => setSelectedChar((prev) => (prev === name ? null : name))}
+                      />
+                    ))}
+                  </div>
                 </Stack>
               )}
 

@@ -4,7 +4,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import {
   Title, Stack, Button, TextInput, Group, ActionIcon, Modal,
   Card, Text, Tabs, Badge, Select, Table, Checkbox, Tooltip, Anchor,
-  Accordion } from '@mantine/core';
+  Accordion, Collapse, UnstyledButton,
+} from '@mantine/core';
 import { Textarea } from '@/components/ResizableTextarea';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
@@ -19,6 +20,7 @@ import { useEntityOwners } from '@/hooks/useEntityOwners';
 import { PermissionHint } from '@/components/PermissionHint';
 import { HScroll } from '@/components/HScroll';
 import { ScrollableTabsList } from '@/components/ScrollableTabsList';
+import { useIsCompact } from '@/hooks/useIsCompact';
 
 interface StoryEvent {
   name: string;
@@ -68,6 +70,17 @@ function StoriesPage() {
   const [filter, setFilter] = useState('');
   const [activeTab, setActiveTab] = useState<string | null>('events');
   const [statusFilter, setStatusFilter] = useState<'all' | EntityListStatus>('all');
+  const [openEventValue, setOpenEventValue] = useState<string | null>(null);
+  const isCompact = useIsCompact();
+  const [presenceOpen, setPresenceOpen] = useState(!isCompact);
+
+  useEffect(() => {
+    setPresenceOpen(!isCompact);
+  }, [isCompact]);
+
+  useEffect(() => {
+    setOpenEventValue(null);
+  }, [selected]);
 
   const loadNames = async () => {
     try {
@@ -351,7 +364,7 @@ function StoriesPage() {
           selected={selected}
           onMobileBack={() => setSelected(null)}
           emptySelectTitle="Выберите историю"
-          emptySelectDescription="Слева — список со статусами. Справа — события, персонажи и присутствие."
+          emptySelectDescription="Список со статусами. Дальше — события, персонажи и присутствие."
           sidebar={{
             items: sidebarItems,
             selected,
@@ -364,9 +377,9 @@ function StoriesPage() {
             itemStatuses: statuses,
             statusLegend: true,
             owners,
-            width: 280,
-            footer: (
-              <Group gap={4} px={4} wrap="wrap" mt={4}>
+            width: 240,
+            header: (
+              <Group gap={4} wrap="wrap" mb={4}>
                 {([
                   ['all', 'Все'],
                   ['wip', 'В работе'],
@@ -411,7 +424,6 @@ function StoriesPage() {
                   <ScrollableTabsList>
                     <Tabs.Tab value="events">События ({events.length})</Tabs.Tab>
                     <Tabs.Tab value="characters">Персонажи ({storyChars.length})</Tabs.Tab>
-                    <Tabs.Tab value="presence">Присутствие</Tabs.Tab>
                     <Tabs.Tab value="writer">Мастерский текст</Tabs.Tab>
                   </ScrollableTabsList>
 
@@ -426,7 +438,86 @@ function StoriesPage() {
                         Добавить событие
                       </Button>
 
-                      <Accordion>
+                      <div>
+                        <UnstyledButton
+                          onClick={() => setPresenceOpen((v) => !v)}
+                          style={{ display: 'block', width: '100%' }}
+                        >
+                          <Group gap="xs" justify="space-between" wrap="nowrap">
+                            <div>
+                              <Text size="sm" fw={600}>Присутствие</Text>
+                              <Text size="xs" c="dimmed">
+                                Матрица: кто в каком событии (зелёная галочка — адаптация готова)
+                              </Text>
+                            </div>
+                            <Text size="sm" c="dimmed">{presenceOpen ? '▾' : '▸'}</Text>
+                          </Group>
+                        </UnstyledButton>
+                        <Collapse in={presenceOpen}>
+                          <Stack gap="sm" mt="sm">
+                            {events.length > 0 && storyChars.length > 0 ? (
+                              <HScroll minWidth={480}>
+                                <Table striped withTableBorder stickyHeader>
+                                  <Table.Thead>
+                                    <Table.Tr>
+                                      <Table.Th style={{ minWidth: 180, position: 'sticky', left: 0, zIndex: 2, background: 'var(--mantine-color-body)' }}>
+                                        Событие
+                                      </Table.Th>
+                                      {storyChars.map((charName) => (
+                                        <Table.Th key={charName} style={{ minWidth: 96, maxWidth: 140 }}>
+                                          <Tooltip label={charName} withArrow>
+                                            <Text size="xs" fw={500} lineClamp={2} style={{ whiteSpace: 'normal' }}>
+                                              {charName}
+                                            </Text>
+                                          </Tooltip>
+                                        </Table.Th>
+                                      ))}
+                                    </Table.Tr>
+                                  </Table.Thead>
+                                  <Table.Tbody>
+                                    {events.map((ev, evIdx) => (
+                                      <Table.Tr key={`${ev.name}-${evIdx}`}>
+                                        <Table.Td style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--mantine-color-body)' }}>
+                                          <UnstyledButton onClick={() => setOpenEventValue(`ev-${evIdx}`)}>
+                                            <Text size="sm" fw={500} style={{ textDecoration: 'underline', textUnderlineOffset: 2 }}>
+                                              {ev.name}
+                                            </Text>
+                                          </UnstyledButton>
+                                          {ev.time && <Text size="xs" c="dimmed">{ev.time}</Text>}
+                                        </Table.Td>
+                                        {storyChars.map((charName) => {
+                                          const inEvent = !!ev.characters?.[charName];
+                                          const isReady = !!ev.characters?.[charName]?.ready;
+                                          return (
+                                            <Table.Td key={charName} style={{ textAlign: 'center' }}>
+                                              <Checkbox
+                                                size="sm"
+                                                checked={inEvent}
+                                                color={isReady ? 'green' : undefined}
+                                                aria-label={`${charName} в «${ev.name}»`}
+                                                onChange={() => {
+                                                  if (inEvent) handleRemoveCharFromEvent(evIdx, charName);
+                                                  else handleAddCharToEvent(evIdx, charName);
+                                                }}
+                                              />
+                                            </Table.Td>
+                                          );
+                                        })}
+                                      </Table.Tr>
+                                    ))}
+                                  </Table.Tbody>
+                                </Table>
+                              </HScroll>
+                            ) : (
+                              <Text c="dimmed" size="sm">
+                                Добавьте персонажей (вкладка «Персонажи») и события ниже.
+                              </Text>
+                            )}
+                          </Stack>
+                        </Collapse>
+                      </div>
+
+                      <Accordion value={openEventValue} onChange={setOpenEventValue}>
                         {events.map((ev, evIdx) => {
                           const chars = Object.entries(ev.characters || {});
                           const readyCount = chars.filter(([, a]) => a.ready).length;
@@ -434,10 +525,6 @@ function StoriesPage() {
                             <Accordion.Item key={`${selected}-ev-${evIdx}-${ev.name}`} value={`ev-${evIdx}`}>
                               <Accordion.Control>
                                 <Group gap="xs">
-                                  <ActionIcon size="xs" variant="subtle" disabled={evIdx === 0}
-                                    onClick={(e) => { e.stopPropagation(); handleMoveEvent(evIdx, 'up'); }}>↑</ActionIcon>
-                                  <ActionIcon size="xs" variant="subtle" disabled={evIdx === events.length - 1}
-                                    onClick={(e) => { e.stopPropagation(); handleMoveEvent(evIdx, 'down'); }}>↓</ActionIcon>
                                   <Text fw={500}>{ev.name}</Text>
                                   {ev.time && <Badge size="sm" variant="light">{ev.time}</Badge>}
                                   <Badge size="sm" color="gray">{chars.length} перс.</Badge>
@@ -448,6 +535,24 @@ function StoriesPage() {
                               </Accordion.Control>
                               <Accordion.Panel>
                                 <Stack gap="sm">
+                                  <Group gap="xs">
+                                    <Button
+                                      size="compact-xs"
+                                      variant="default"
+                                      disabled={evIdx === 0 || !permissions.canEditEntity(owners[selected])}
+                                      onClick={() => handleMoveEvent(evIdx, 'up')}
+                                    >
+                                      ↑ Выше
+                                    </Button>
+                                    <Button
+                                      size="compact-xs"
+                                      variant="default"
+                                      disabled={evIdx === events.length - 1 || !permissions.canEditEntity(owners[selected])}
+                                      onClick={() => handleMoveEvent(evIdx, 'down')}
+                                    >
+                                      ↓ Ниже
+                                    </Button>
+                                  </Group>
                                   <TextInput
                                     key={`${selected}-evname-${evIdx}-${ev.name}`}
                                     label="Название"
@@ -638,68 +743,6 @@ function StoriesPage() {
                         </HScroll>
                       ) : (
                         <Text size="sm" c="dimmed">Пока никого нет — добавьте персонажа выше.</Text>
-                      )}
-                    </Stack>
-                  </Tabs.Panel>
-
-                  <Tabs.Panel value="presence" pt="md">
-                    <Stack gap="sm">
-                      <Text size="sm" c="dimmed">
-                        Строки — события, столбцы — персонажи. Галочка = персонаж в событии; зелёная = адаптация готова.
-                      </Text>
-                      {events.length > 0 && storyChars.length > 0 ? (
-                        <HScroll minWidth={480}>
-                          <Table striped withTableBorder stickyHeader>
-                            <Table.Thead>
-                              <Table.Tr>
-                                <Table.Th style={{ minWidth: 180, position: 'sticky', left: 0, zIndex: 2, background: 'var(--mantine-color-body)' }}>
-                                  Событие
-                                </Table.Th>
-                                {storyChars.map((charName) => (
-                                  <Table.Th key={charName} style={{ minWidth: 96, maxWidth: 140 }}>
-                                    <Tooltip label={charName} withArrow>
-                                      <Text size="xs" fw={500} lineClamp={2} style={{ whiteSpace: 'normal' }}>
-                                        {charName}
-                                      </Text>
-                                    </Tooltip>
-                                  </Table.Th>
-                                ))}
-                              </Table.Tr>
-                            </Table.Thead>
-                            <Table.Tbody>
-                              {events.map((ev, evIdx) => (
-                                <Table.Tr key={`${ev.name}-${evIdx}`}>
-                                  <Table.Td style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--mantine-color-body)' }}>
-                                    <Text size="sm" fw={500}>{ev.name}</Text>
-                                    {ev.time && <Text size="xs" c="dimmed">{ev.time}</Text>}
-                                  </Table.Td>
-                                  {storyChars.map((charName) => {
-                                    const inEvent = !!ev.characters?.[charName];
-                                    const isReady = !!ev.characters?.[charName]?.ready;
-                                    return (
-                                      <Table.Td key={charName} style={{ textAlign: 'center' }}>
-                                        <Checkbox
-                                          size="sm"
-                                          checked={inEvent}
-                                          color={isReady ? 'green' : undefined}
-                                          aria-label={`${charName} в «${ev.name}»`}
-                                          onChange={() => {
-                                            if (inEvent) handleRemoveCharFromEvent(evIdx, charName);
-                                            else handleAddCharToEvent(evIdx, charName);
-                                          }}
-                                        />
-                                      </Table.Td>
-                                    );
-                                  })}
-                                </Table.Tr>
-                              ))}
-                            </Table.Tbody>
-                          </Table>
-                        </HScroll>
-                      ) : (
-                        <Text c="dimmed" size="sm">
-                          Добавьте персонажей (вкладка «Персонажи») и события (вкладка «События»).
-                        </Text>
                       )}
                     </Stack>
                   </Tabs.Panel>

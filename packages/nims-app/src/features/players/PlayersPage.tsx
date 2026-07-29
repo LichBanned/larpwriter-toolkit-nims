@@ -247,7 +247,7 @@ function PlayersPage() {
               selected={selected}
               onMobileBack={() => setSelected(null)}
               emptySelectTitle="Выберите игрока"
-              emptySelectDescription="Слева — список профилей. Справа — поля и привязка к персонажу."
+              emptySelectDescription="Выберите профиль в списке — поля и привязка к персонажу."
               sidebar={{
                 items: names,
                 selected,

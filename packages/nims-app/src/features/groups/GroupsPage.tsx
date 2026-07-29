@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Title, Stack, Button, TextInput, Group, Modal,
-  MultiSelect, Tabs, Loader, Center } from '@mantine/core';
+  MultiSelect, Tabs, Loader, Center, Anchor, Text,
+} from '@mantine/core';
 import { Textarea } from '@/components/ResizableTextarea';
 import { ScrollableTabsList } from '@/components/ScrollableTabsList';
 import { useDisclosure } from '@mantine/hooks';
@@ -198,7 +199,7 @@ function GroupsPage() {
           selected={selected}
           onMobileBack={() => setSelected(null)}
           emptySelectTitle="Выберите группу"
-          emptySelectDescription="Слева — список. Справа — участники и профиль."
+          emptySelectDescription="Выберите группу в списке — участники и профиль."
           sidebar={{
             items: names,
             selected,
@@ -238,15 +239,35 @@ function GroupsPage() {
                   {groupLoading && loadedFor !== selected ? (
                     <Center py="xl"><Loader size="sm" /></Center>
                   ) : (
-                    <MultiSelect
-                      label="Персонажи в группе"
-                      data={charNames}
-                      value={members}
-                      onChange={handleMembersChange}
-                      searchable
-                      clearable
-                      disabled={!permissions.canEditEntity(owners[selected])}
-                    />
+                    <Stack gap="sm">
+                      <MultiSelect
+                        label="Персонажи в группе"
+                        description="Добавьте или уберите участников"
+                        data={charNames}
+                        value={members}
+                        onChange={handleMembersChange}
+                        searchable
+                        clearable
+                        disabled={!permissions.canEditEntity(owners[selected])}
+                      />
+                      {members.length > 0 ? (
+                        <Stack gap={4}>
+                          <Text size="sm" c="dimmed">Состав ({members.length})</Text>
+                          {[...members].sort((a, b) => a.localeCompare(b)).map((name) => (
+                            <Anchor
+                              key={name}
+                              component={Link}
+                              to={`/characters?select=${encodeURIComponent(name)}`}
+                              size="sm"
+                            >
+                              {name}
+                            </Anchor>
+                          ))}
+                        </Stack>
+                      ) : (
+                        <Text size="sm" c="dimmed">Пока никого нет — выберите персонажей выше.</Text>
+                      )}
+                    </Stack>
                   )}
                 </Tabs.Panel>
 

@@ -19,7 +19,7 @@ export function EntityPageLayout({
   sidebar,
   loading,
   selected,
-  emptySelectTitle = 'Выберите элемент из списка слева',
+  emptySelectTitle,
   emptySelectDescription,
   onMobileBack,
   children,
@@ -27,6 +27,9 @@ export function EntityPageLayout({
   const isCompact = useIsCompact();
   const showList = !isCompact || !selected;
   const showDetail = !isCompact || !!selected;
+
+  const resolvedTitle = emptySelectTitle
+    ?? (isCompact ? 'Выберите элемент из списка' : 'Выберите элемент из списка слева');
 
   const detailCard = (
     <Card
@@ -71,7 +74,7 @@ export function EntityPageLayout({
       ) : selected ? (
         children
       ) : (
-        <EmptyState title={emptySelectTitle} description={emptySelectDescription} />
+        <EmptyState title={resolvedTitle} description={emptySelectDescription} />
       )}
     </Card>
   );
