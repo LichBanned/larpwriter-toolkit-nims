@@ -4,7 +4,11 @@
  * Attach history + multiproject API methods onto the raw DBMS object.
  */
 
-const { withClient } = require('../../nims-dbms/pg/storage');
+const {
+  withClient,
+  setAccountPassword,
+  syncPasswordToAllProjectDocuments,
+} = require('../../nims-dbms/pg/storage');
 const {
   listEntityRevisions,
   getEntityRevision,
@@ -315,7 +319,42 @@ function attachHistoryAndProjectsApi(rawDb, dbmsRef) {
           });
         }
       }
-      return origChangeOrganizerPassword(args, user);
+      const result = await origChangeOrganizerPassword(args, user);
+      if (userName && pgBoot.storageMode() === 'postgres') {
+        const info = rawDb.database
+          && rawDb.database.ManagementInfo
+          && rawDb.database.ManagementInfo.UsersInfo
+          && rawDb.database.ManagementInfo.UsersInfo[userName];
+        if (info && info.salt && info.hashedPassword) {
+          await withClient(async (client) => {
+            await setAccountPassword(client, userName, info.salt, info.hashedPassword, 'organizer');
+            await syncPasswordToAllProjectDocuments(client, userName, info.salt, info.hashedPassword);
+          });
+        }
+      }
+      return result;
+    };
+  }
+
+  const origChangePlayerPassword = rawDb.changePlayerPassword
+    && rawDb.changePlayerPassword.bind(rawDb);
+  if (origChangePlayerPassword) {
+    rawDb.changePlayerPassword = async function changePlayerPasswordSynced(args = {}, user) {
+      const userName = String(args.userName || '').trim();
+      const result = await origChangePlayerPassword(args, user);
+      if (userName && pgBoot.storageMode() === 'postgres') {
+        const info = rawDb.database
+          && rawDb.database.ManagementInfo
+          && rawDb.database.ManagementInfo.PlayersInfo
+          && rawDb.database.ManagementInfo.PlayersInfo[userName];
+        if (info && info.salt && info.hashedPassword) {
+          await withClient(async (client) => {
+            await setAccountPassword(client, userName, info.salt, info.hashedPassword, 'player');
+            await syncPasswordToAllProjectDocuments(client, userName, info.salt, info.hashedPassword);
+          });
+        }
+      }
+      return result;
     };
   }
 
@@ -335,35 +374,15 @@ function attachHistoryAndProjectsApi(rawDb, dbmsRef) {
 
     if (pgBoot.storageMode() === 'postgres') {
       await withClient(async (client) => {
-        const upd = await client.query(
-          `UPDATE accounts
-           SET salt = $2, password_hash = $3, updated_at = now()
-           WHERE username = $1 AND is_server_admin = true
-           RETURNING id`,
-          [username, salt, hashedPassword],
+        const check = await client.query(
+          `SELECT 1 FROM accounts WHERE username = $1 AND is_server_admin = true LIMIT 1`,
+          [username],
         );
-        if (!upd.rows.length) {
+        if (!check.rows.length) {
           throw Object.assign(new Error('not-server-admin'), { messageId: 'errors-user-is-not-found' });
         }
-        const docs = await client.query('SELECT project_id, document FROM project_documents');
-        for (const row of docs.rows) {
-          const doc = row.document;
-          const info = doc
-            && doc.ManagementInfo
-            && doc.ManagementInfo.UsersInfo
-            && doc.ManagementInfo.UsersInfo[username];
-          if (!info) continue;
-          const next = JSON.parse(JSON.stringify(doc));
-          next.ManagementInfo.UsersInfo[username] = {
-            ...next.ManagementInfo.UsersInfo[username],
-            salt,
-            hashedPassword,
-          };
-          await client.query(
-            `UPDATE project_documents SET document = $2::jsonb, updated_at = now() WHERE project_id = $1`,
-            [row.project_id, JSON.stringify(next)],
-          );
-        }
+        await setAccountPassword(client, username, salt, hashedPassword, 'organizer');
+        await syncPasswordToAllProjectDocuments(client, username, salt, hashedPassword);
       });
     }
 

@@ -300,6 +300,8 @@ async function saveDatabaseToProject(client, database, slug, opts = {}) {
     }
 
     // accounts + memberships + ownership
+    // Login credentials live in accounts; overlay them into MI so project docs stay consistent.
+    await applyAccountCredentialsToManagementInfo(client, mi);
     const usersInfo = mi.UsersInfo || {};
     const playersInfo = mi.PlayersInfo || {};
     const admins = new Set([...(mi.admins || []), mi.admin].filter(Boolean));
@@ -432,6 +434,81 @@ async function getAccountAuth(client, username) {
   return r.rows;
 }
 
+/** Write credentials into accounts (source of truth for login). */
+async function setAccountPassword(client, username, salt, passwordHash, kind) {
+  const r = await client.query(
+    `UPDATE accounts
+     SET salt = $2, password_hash = $3, updated_at = now(),
+         kind = COALESCE($4, kind)
+     WHERE username = $1
+     RETURNING id`,
+    [username, salt, passwordHash, kind || null],
+  );
+  if (r.rows.length) return r.rows[0];
+  const ins = await client.query(
+    `INSERT INTO accounts (username, salt, password_hash, kind)
+     VALUES ($1,$2,$3,COALESCE($4,'organizer'))
+     RETURNING id`,
+    [username, salt, passwordHash, kind || 'organizer'],
+  );
+  return ins.rows[0];
+}
+
+/** Copy accounts credentials into ManagementInfo maps (never the reverse for existing accounts). */
+async function applyAccountCredentialsToManagementInfo(client, mi) {
+  if (!mi) return;
+  const usersInfo = mi.UsersInfo || {};
+  const playersInfo = mi.PlayersInfo || {};
+  const names = [...new Set([...Object.keys(usersInfo), ...Object.keys(playersInfo)])];
+  if (!names.length) return;
+  const r = await client.query(
+    `SELECT username, salt, password_hash FROM accounts
+     WHERE username = ANY($1::text[]) AND salt IS NOT NULL AND password_hash IS NOT NULL`,
+    [names],
+  );
+  const byName = new Map(r.rows.map((row) => [row.username, row]));
+  for (const [uname, info] of Object.entries(usersInfo)) {
+    const acc = byName.get(uname);
+    if (!acc || !info) continue;
+    info.salt = acc.salt;
+    info.hashedPassword = acc.password_hash;
+  }
+  for (const [uname, info] of Object.entries(playersInfo)) {
+    const acc = byName.get(uname);
+    if (!acc || !info) continue;
+    info.salt = acc.salt;
+    info.hashedPassword = acc.password_hash;
+  }
+}
+
+/** Update salt/hash for a username in every project document. */
+async function syncPasswordToAllProjectDocuments(client, username, salt, hashedPassword) {
+  const docs = await client.query('SELECT project_id, document FROM project_documents');
+  for (const row of docs.rows) {
+    const doc = row.document;
+    if (!doc || !doc.ManagementInfo) continue;
+    let changed = false;
+    const next = JSON.parse(JSON.stringify(doc));
+    const ui = next.ManagementInfo.UsersInfo && next.ManagementInfo.UsersInfo[username];
+    if (ui) {
+      ui.salt = salt;
+      ui.hashedPassword = hashedPassword;
+      changed = true;
+    }
+    const pi = next.ManagementInfo.PlayersInfo && next.ManagementInfo.PlayersInfo[username];
+    if (pi) {
+      pi.salt = salt;
+      pi.hashedPassword = hashedPassword;
+      changed = true;
+    }
+    if (!changed) continue;
+    await client.query(
+      `UPDATE project_documents SET document = $2::jsonb, updated_at = now() WHERE project_id = $1`,
+      [row.project_id, JSON.stringify(next)],
+    );
+  }
+}
+
 module.exports = {
   getPool,
   withClient,
@@ -439,4 +516,7 @@ module.exports = {
   loadDatabaseFromProject,
   listProjectSlugs,
   getAccountAuth,
+  setAccountPassword,
+  applyAccountCredentialsToManagementInfo,
+  syncPasswordToAllProjectDocuments,
 };

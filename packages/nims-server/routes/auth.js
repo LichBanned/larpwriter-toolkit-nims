@@ -1,6 +1,12 @@
 const passport = require('passport');
 const log = require('../libs/log')(module);
 const { createRateLimiter } = require('../middlewares/rateLimit');
+const pgBoot = require('../pg/boot');
+const {
+    withClient,
+    setAccountPassword,
+    syncPasswordToAllProjectDocuments,
+} = require('../../nims-dbms/pg/storage');
 
 const authRateLimit = createRateLimiter({
     windowMs: 60_000,
@@ -78,7 +84,17 @@ module.exports = function (app, dbms) {
                 });
                 return;
             }
-            sessionLogIn(req, user).then(() => {
+            sessionLogIn(req, user).then(async () => {
+                // Align in-memory project with the account's project from auth.
+                if (pgBoot.storageMode() === 'postgres' && user.projectSlug
+                    && typeof db.setCurrentProject === 'function'
+                    && user.projectSlug !== pgBoot.projectSlug()) {
+                    try {
+                        await db.setCurrentProject({ slug: user.projectSlug }, user);
+                    } catch (err) {
+                        log.error(`login setCurrentProject: ${err && err.message ? err.message : err}`);
+                    }
+                }
                 const wantsJson = (req.get('Accept') || '').includes('application/json')
                     || req.get('X-Requested-With') === 'XMLHttpRequest'
                     || req.query.format === 'json';
@@ -131,16 +147,51 @@ module.exports = function (app, dbms) {
                 }
                 return db.signUp({ userName, password, confirmPassword });
             })
-            .then((result) => {
-                if (result === null) return;
+            .then(async (result) => {
+                if (result === null) return null;
+                // Persist login credentials into accounts (source of truth), not only active project MI.
+                if (pgBoot.storageMode() === 'postgres') {
+                    try {
+                        const info = db.database
+                            && db.database.ManagementInfo
+                            && db.database.ManagementInfo.PlayersInfo
+                            && db.database.ManagementInfo.PlayersInfo[userName];
+                        if (info && info.salt && info.hashedPassword) {
+                            await withClient(async (client) => {
+                                await setAccountPassword(
+                                    client,
+                                    userName,
+                                    info.salt,
+                                    info.hashedPassword,
+                                    'player',
+                                );
+                                await syncPasswordToAllProjectDocuments(
+                                    client,
+                                    userName,
+                                    info.salt,
+                                    info.hashedPassword,
+                                );
+                            });
+                        }
+                    } catch (err) {
+                        log.error(`signup accounts sync: ${err && err.message ? err.message : err}`);
+                    }
+                }
                 return db.login({ username: userName, password })
                     .then((user) => sessionLogIn(req, user).then(() => {
                         res.json({
-                            user: { name: user.name, role: user.role },
+                            user: {
+                                name: user.name,
+                                role: user.role,
+                                projectId: user.projectId || null,
+                                projectSlug: user.projectSlug || null,
+                                isServerAdmin: !!user.isServerAdmin,
+                            },
                         });
                     }));
             })
             .catch((err) => {
+                if (res.headersSent) return;
                 const msg = (err && (err.messageId || err.message)) || 'Ошибка регистрации';
                 const text = String(msg).replace(/^errors-/, '').replace(/-/g, ' ');
                 res.status(400).json({

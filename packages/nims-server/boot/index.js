@@ -107,28 +107,62 @@ module.exports = function (app, dbms) {
         }
 
         pgBoot.verifyAccountPassword(username, password, verifyPassword)
-            .then((auth) => {
-                if (!auth) {
-                    tryEngine();
+            .then(async (auth) => {
+                if (auth) {
+                    finish({
+                        name: auth.username || username,
+                        role: auth.role || (auth.kind === 'player' ? 'player' : 'organizer'),
+                        projectSlug: auth.projectSlug || null,
+                        projectId: auth.projectId || null,
+                        isServerAdmin: !!auth.isServerAdmin,
+                    });
                     return;
                 }
-                return userStorage.login({ username, password })
-                    .then((user) => {
-                        user.projectSlug = auth.projectSlug || null;
-                        user.projectId = auth.projectId || null;
-                        user.isServerAdmin = !!auth.isServerAdmin;
-                        if (auth.role) user.role = auth.role;
-                        finish(user);
-                    })
-                    .catch(() => {
-                        finish({
-                            name: username,
-                            role: auth.role || (auth.kind === 'player' ? 'player' : 'organizer'),
-                            projectSlug: auth.projectSlug || null,
-                            projectId: auth.projectId || null,
-                            isServerAdmin: !!auth.isServerAdmin,
+                // Legacy: password only in active project's ManagementInfo — promote into accounts.
+                try {
+                    const user = await userStorage.login({ username, password });
+                    const orgOrPlayer = userStorage.database
+                        && userStorage.database.ManagementInfo
+                        && (
+                            (userStorage.database.ManagementInfo.UsersInfo
+                                && userStorage.database.ManagementInfo.UsersInfo[username])
+                            || (userStorage.database.ManagementInfo.PlayersInfo
+                                && userStorage.database.ManagementInfo.PlayersInfo[username])
+                        );
+                    if (orgOrPlayer && orgOrPlayer.salt && orgOrPlayer.hashedPassword
+                        && pgBoot.storageMode() === 'postgres') {
+                        const {
+                            withClient,
+                            setAccountPassword,
+                            syncPasswordToAllProjectDocuments,
+                        } = require('../../nims-dbms/pg/storage');
+                        await withClient(async (client) => {
+                            await setAccountPassword(
+                                client,
+                                username,
+                                orgOrPlayer.salt,
+                                orgOrPlayer.hashedPassword,
+                                user.role === 'player' ? 'player' : 'organizer',
+                            );
+                            await syncPasswordToAllProjectDocuments(
+                                client,
+                                username,
+                                orgOrPlayer.salt,
+                                orgOrPlayer.hashedPassword,
+                            );
                         });
+                    }
+                    const flags = await pgBoot.getMembershipFlags(username);
+                    finish({
+                        name: user.name || username,
+                        role: (flags && flags.role) || user.role || 'organizer',
+                        projectSlug: (flags && flags.projectSlug) || null,
+                        projectId: (flags && flags.projectId) || null,
+                        isServerAdmin: !!(flags && flags.isServerAdmin),
                     });
+                } catch (err) {
+                    callback(null, false, { message: 'Неверный логин или пароль' });
+                }
             })
             .catch(() => tryEngine());
     }));
