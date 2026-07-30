@@ -289,6 +289,9 @@ export class DatabaseEngine {
   getResolvedPlayerProfileName(args: { userName: string }) {
     return this.users.getResolvedPlayerProfileName(args);
   }
+  provisionPlayerLogin(args: { userName: string; profileName?: string }) {
+    return this.users.provisionPlayerLogin(args);
+  }
   getPlayersOptions() { return this.users.getPlayersOptions(); }
   setPlayerOption(args: { name: string; value: boolean }) { return this.users.setPlayerOption(args); }
   getWelcomeText() { return this.users.getWelcomeText(); }

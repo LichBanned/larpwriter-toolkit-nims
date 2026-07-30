@@ -201,6 +201,21 @@ function attachHistoryAndProjectsApi(rawDb, dbmsRef) {
     await withClient((client) => mergeActivePlayerMemberships(client, slug, loaded.database));
     pgBoot.setActiveProjectSlug(slug);
     await rawDb.setDatabase({ database: loaded.database, preserveManagementInfo: false });
+    // Create missing player/questionnaire sheets for memberships (join without signup on this project).
+    const playersInfo = (rawDb.database
+      && rawDb.database.ManagementInfo
+      && rawDb.database.ManagementInfo.PlayersInfo) || {};
+    for (const [login, info] of Object.entries(playersInfo)) {
+      if (typeof rawDb.provisionPlayerLogin === 'function') {
+        rawDb.provisionPlayerLogin({
+          userName: login,
+          profileName: (info && info.profileName) || login,
+        });
+      }
+    }
+    if (pgBoot.storageMode() === 'postgres') {
+      await pgBoot.persistDatabase(await rawDb.getDatabase());
+    }
     const role = isServerAdmin
       ? 'organizer'
       : (roleFromMembership(info.membership, false) || 'player');

@@ -54,8 +54,12 @@ module.exports = function (app, dbms) {
     app.get('/signup-status', (req, res, next) => {
         db.getPlayersOptions()
             .then((opts) => {
+                const allow = !!(opts && opts.allowPlayerCreation);
                 res.json({
-                    allowPlayerCreation: !!(opts && opts.allowPlayerCreation),
+                    allowPlayerCreation: allow,
+                    message: allow
+                        ? null
+                        : 'Саморегистрация отключена для текущего проекта. Войдите с существующим логином или обратитесь к мастеру.',
                 });
             })
             .catch(next);

@@ -94,7 +94,10 @@ function PlayerCabinetPage() {
   }
 
   if (error) {
-    return <Alert color="red" title="Ошибка">{error}</Alert>;
+    const friendly = /user-is-not-found|entity-is-not-exist|Internal Server Error/i.test(error)
+      ? 'Профиль игрока в этом проекте ещё не готов. Откройте проект ещё раз или обратитесь к мастеру — после обновления сервера листы создаются автоматически.'
+      : error;
+    return <Alert color="red" title="Ошибка">{friendly}</Alert>;
   }
 
   if (!data) {

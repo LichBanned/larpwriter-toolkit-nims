@@ -392,6 +392,13 @@ export class ProfilesEngine {
     const playersInfo = this.engine.database.ManagementInfo?.PlayersInfo || {};
     if (!playersInfo[login]) throw new Error('errors-user-is-not-found');
 
+    // Membership/join may create PlayersInfo without profile sheets (other projects).
+    const desiredSheet = String(playersInfo[login].profileName || login).trim() || login;
+    this.engine.users.ensurePlayerSheets(desiredSheet);
+    if (!playersInfo[login].profileName) {
+      playersInfo[login].profileName = desiredSheet;
+    }
+
     const profileName = this.engine.users.resolvePlayerProfileName(login);
     if (!profileName) throw new Error('errors-entity-is-not-exist');
 

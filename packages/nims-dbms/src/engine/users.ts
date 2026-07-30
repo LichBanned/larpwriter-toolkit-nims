@@ -211,9 +211,26 @@ export class UsersEngine {
     if (!info) return null;
     const db = this.engine.database;
     const linked = info.profileName;
-    if (linked && db.Players[linked]) return linked;
+    if (linked) {
+      if (!db.Players[linked]) this.ensurePlayerSheets(linked);
+      if (db.Players[linked]) return linked;
+    }
+    if (!db.Players[userName]) this.ensurePlayerSheets(userName);
     if (db.Players[userName]) return userName;
     return linked || null;
+  }
+
+  /** Ensure PlayersInfo + profile/questionnaire sheets for a login (cross-project join). */
+  provisionPlayerLogin(args: { userName: string; profileName?: string }): void {
+    const userName = String(args?.userName || '').trim();
+    if (!userName) return;
+    const profileName = String(args?.profileName || userName).trim() || userName;
+    if (!this.playersInfo[userName]) {
+      this.playersInfo[userName] = { name: userName, profileName };
+    } else if (!this.playersInfo[userName].profileName) {
+      this.playersInfo[userName].profileName = profileName;
+    }
+    this.ensurePlayerSheets(this.playersInfo[userName].profileName || profileName);
   }
 
   async getResolvedPlayerProfileName(args: { userName: string }): Promise<string | null> {

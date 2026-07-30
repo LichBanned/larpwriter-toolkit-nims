@@ -15,12 +15,23 @@ export const LoginPage = observer(function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [allowSignup, setAllowSignup] = useState(false);
+  const [signupClosedHint, setSignupClosedHint] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/signup-status', { credentials: 'include' })
       .then((r) => r.json())
-      .then((d) => setAllowSignup(!!d.allowPlayerCreation))
-      .catch(() => setAllowSignup(false));
+      .then((d) => {
+        setAllowSignup(!!d.allowPlayerCreation);
+        setSignupClosedHint(d.allowPlayerCreation
+          ? null
+          : (d.message || 'Саморегистрация отключена. Обратитесь к мастеру.'));
+        if (!d.allowPlayerCreation) setMode('login');
+      })
+      .catch(() => {
+        setAllowSignup(false);
+        setSignupClosedHint('Саморегистрация недоступна.');
+        setMode('login');
+      });
   }, []);
 
   const submitLogin = async (e: React.FormEvent) => {
@@ -69,7 +80,11 @@ export const LoginPage = observer(function LoginPage() {
                 <Tabs.Tab value="signup">Регистрация</Tabs.Tab>
               </Tabs.List>
             </Tabs>
-          ) : null}
+          ) : (
+            <Text size="sm" c="dimmed">
+              {signupClosedHint || 'Саморегистрация отключена. Войдите с логином, выданным мастером.'}
+            </Text>
+          )}
 
           {error && (
             <Alert color="red" title={mode === 'signup' ? 'Ошибка регистрации' : 'Ошибка входа'}>
