@@ -10,13 +10,22 @@ const {
   saveDatabaseToProject,
   getAccountAuth,
 } = require('../../nims-dbms/pg/storage');
+const { recordMutateAudit } = require('../../nims-dbms/pg/revisions');
+const { roleFromMembership } = require('../../nims-dbms/pg/projectsApi');
+
+let activeProjectSlug = process.env.NIMS_PROJECT_SLUG || 'main';
 
 function storageMode() {
   return (process.env.NIMS_STORAGE || 'json').toLowerCase();
 }
 
 function projectSlug() {
-  return process.env.NIMS_PROJECT_SLUG || 'main';
+  return activeProjectSlug || process.env.NIMS_PROJECT_SLUG || 'main';
+}
+
+function setActiveProjectSlug(slug) {
+  if (slug) activeProjectSlug = String(slug);
+  return activeProjectSlug;
 }
 
 function runMigrations() {
@@ -32,9 +41,6 @@ function runMigrations() {
   }
 }
 
-/**
- * Load Database document for boot. Returns null if project missing.
- */
 async function loadBootDatabase() {
   runMigrations();
   return withClient(async (client) => {
@@ -46,6 +52,7 @@ async function loadBootDatabase() {
     }
     const slugs = await listProjectSlugs(client);
     if (slugs.length === 1) {
+      setActiveProjectSlug(slugs[0]);
       loaded = await loadDatabaseFromProject(client, slugs[0]);
       log.info(`NIMS_PROJECT_SLUG="${slug}" missing; using sole project "${slugs[0]}"`);
       return loaded.database;
@@ -60,6 +67,21 @@ async function persistDatabase(database) {
   await withClient((client) => saveDatabaseToProject(client, database, projectSlug()));
 }
 
+async function loadProjectDatabase(slug) {
+  return withClient(async (client) => loadDatabaseFromProject(client, slug));
+}
+
+function pickAuthRow(rows, preferredSlug) {
+  if (!rows.length) return null;
+  const active = rows.filter((r) => !r.membership_status || r.membership_status === 'active');
+  const pool = active.length ? active : rows;
+  if (preferredSlug) {
+    const hit = pool.find((r) => r.project_slug === preferredSlug);
+    if (hit) return hit;
+  }
+  return pool.find((r) => r.project_slug) || pool[0];
+}
+
 async function verifyAccountPassword(username, password, verifyFn) {
   return withClient(async (client) => {
     const rows = await getAccountAuth(client, username);
@@ -67,15 +89,28 @@ async function verifyAccountPassword(username, password, verifyFn) {
     const row = rows[0];
     if (!row.salt || !row.password_hash) return null;
     if (!verifyFn(row.salt, row.password_hash, password)) return null;
+    const preferred = pickAuthRow(rows, projectSlug());
+    const membership = preferred && preferred.project_slug
+      ? {
+        member_role: preferred.member_role,
+        is_admin: preferred.is_admin,
+        is_editor: preferred.is_editor,
+        status: preferred.membership_status,
+      }
+      : null;
+    const isServerAdmin = !!row.is_server_admin;
     return {
       accountId: row.id,
       username: row.username,
       kind: row.kind,
-      projectId: row.project_id,
-      projectSlug: row.project_slug,
-      isAdmin: !!row.is_admin,
-      isEditor: !!row.is_editor,
-      playerProfileName: row.player_profile_name,
+      projectId: preferred?.project_id || null,
+      projectSlug: preferred?.project_slug || null,
+      isAdmin: !!(preferred && preferred.is_admin),
+      isEditor: !!(preferred && preferred.is_editor),
+      playerProfileName: preferred?.player_profile_name || null,
+      isServerAdmin,
+      memberRole: preferred?.member_role || null,
+      role: roleFromMembership(membership, isServerAdmin),
     };
   });
 }
@@ -85,14 +120,27 @@ async function getMembershipFlags(username) {
   return withClient(async (client) => {
     const rows = await getAccountAuth(client, username);
     if (!rows.length) return null;
-    const slug = projectSlug();
-    const row = rows.find((r) => r.project_slug === slug) || rows[0];
+    const row = pickAuthRow(rows, projectSlug()) || rows[0];
     return {
       isAdmin: !!row.is_admin,
       isEditor: !!row.is_editor,
       projectId: row.project_id,
       projectSlug: row.project_slug,
       kind: row.kind,
+      isServerAdmin: !!row.is_server_admin,
+      memberRole: row.member_role || null,
+      membershipStatus: row.membership_status || null,
+      role: roleFromMembership(
+        row.project_slug
+          ? {
+            member_role: row.member_role,
+            is_admin: row.is_admin,
+            is_editor: row.is_editor,
+            status: row.membership_status,
+          }
+          : null,
+        !!row.is_server_admin,
+      ),
     };
   });
 }
@@ -114,13 +162,31 @@ async function ownsEntity(username, entityType, entityName) {
   });
 }
 
-const READ_OR_AUTH = /^(get|is|has|login|ensure|subscribe)/;
+async function auditMutate({ command, args, username, ok, errorText, getDatabase }) {
+  if (storageMode() !== 'postgres') return;
+  try {
+    await withClient(async (client) => {
+      let database = null;
+      if (ok && typeof getDatabase === 'function') {
+        database = await getDatabase();
+      }
+      await recordMutateAudit(client, {
+        slug: projectSlug(),
+        database,
+        command,
+        args,
+        username,
+        ok,
+        errorText,
+      });
+    });
+  } catch (err) {
+    log.error(`audit mutate failed: ${err && err.message ? err.message : err}`);
+  }
+}
 
-/**
- * Proxy DBMS methods so mutating calls schedule a write-through persist (debounced).
- * @param {object} db
- * @param {() => Promise<object>} [getSnapshot] — prefer raw engine getDatabase
- */
+const READ_OR_AUTH = /^(get|is|has|login|ensure|subscribe|list|setCurrent)/;
+
 function wrapDbForPersist(db, getSnapshot) {
   if (storageMode() !== 'postgres' || !db) return db;
   const snapshot = typeof getSnapshot === 'function'
@@ -165,11 +231,14 @@ function wrapDbForPersist(db, getSnapshot) {
 module.exports = {
   storageMode,
   projectSlug,
+  setActiveProjectSlug,
   runMigrations,
   loadBootDatabase,
   persistDatabase,
+  loadProjectDatabase,
   verifyAccountPassword,
   getMembershipFlags,
   ownsEntity,
+  auditMutate,
   wrapDbForPersist,
 };

@@ -14,7 +14,8 @@
     "clean": "rm -rf dist",
     "migrate": "node scripts/migrate.js",
     "import-json": "node scripts/import-json-base.js",
-    "export-json": "node scripts/export-json-base.js"
+    "export-json": "node scripts/export-json-base.js",
+    "cleanup-revisions": "node scripts/cleanup-revisions.js"
   },
   "dependencies": {
     "nims-dbms-core": "0.8.0",

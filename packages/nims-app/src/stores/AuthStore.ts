@@ -4,6 +4,20 @@ import type { RootStore } from './RootStore';
 export interface User {
   name: string;
   role: string;
+  projectId?: number | string | null;
+  projectSlug?: string | null;
+  isServerAdmin?: boolean;
+}
+
+function mapUser(raw: any): User | null {
+  if (!raw?.name) return null;
+  return {
+    name: raw.name,
+    role: raw.role || 'organizer',
+    projectId: raw.projectId ?? null,
+    projectSlug: raw.projectSlug ?? null,
+    isServerAdmin: !!raw.isServerAdmin,
+  };
 }
 
 export class AuthStore {
@@ -25,12 +39,21 @@ export class AuthStore {
     return this.user?.role === 'organizer';
   }
 
+  get isServerAdmin() {
+    return !!this.user?.isServerAdmin;
+  }
+
   async bootstrap() {
     this.bootstrapping = true;
     try {
       const ok = await this.fetchMe();
-      if (ok) await this.root.permissions.load();
-      else this.root.permissions.clear();
+      if (ok) {
+        await this.root.projects.load(true);
+        if (this.user?.projectSlug) await this.root.permissions.load();
+        else this.root.permissions.clear();
+      } else {
+        this.root.permissions.clear();
+      }
     } finally {
       runInAction(() => { this.bootstrapping = false; });
     }
@@ -45,7 +68,7 @@ export class AuthStore {
       }
       const data = await res.json();
       runInAction(() => {
-        this.user = data.user ? { name: data.user.name, role: data.user.role } : null;
+        this.user = mapUser(data.user);
       });
       return !!this.user;
     } catch {
@@ -81,11 +104,10 @@ export class AuthStore {
         return false;
       }
       runInAction(() => {
-        this.user = data.user
-          ? { name: data.user.name, role: data.user.role }
-          : { name: username, role: 'player' };
+        this.user = mapUser(data.user) || { name: username, role: 'player' };
       });
-      await this.root.permissions.load();
+      await this.root.projects.load(true);
+      if (this.user?.projectSlug) await this.root.permissions.load();
       return true;
     } catch (e: any) {
       runInAction(() => {
@@ -131,9 +153,21 @@ export class AuthStore {
         return false;
       }
       runInAction(() => {
-        this.user = { name: data.user.name, role: data.user.role };
+        this.user = mapUser(data.user);
       });
-      await this.root.permissions.load();
+      await this.root.projects.load(true);
+      if (!this.user?.projectSlug) {
+        const mine = this.root.projects.projects.filter((p) => !p.joinable && !p.archived_at);
+        if (mine.length === 1) {
+          try {
+            await this.root.projects.select(mine[0].slug);
+          } catch {
+            /* stay on picker */
+          }
+        }
+      }
+      if (this.user?.projectSlug) await this.root.permissions.load();
+      else this.root.permissions.clear();
       return true;
     } catch (e: any) {
       runInAction(() => {
@@ -157,6 +191,7 @@ export class AuthStore {
     } finally {
       runInAction(() => { this.user = null; });
       this.root.permissions.clear();
+      this.root.projects.projects = [];
     }
   }
 

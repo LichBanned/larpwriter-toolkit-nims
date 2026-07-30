@@ -36,6 +36,25 @@ function getAdminsList(res) {
 const userIsLogged = (args, user) => new Promise((resolve, reject) => {
     user ? resolve() : reject(['errors-user-is-not-logged']);
 });
+const userIsServerAdmin = (args, user) => new Promise((resolve, reject) => {
+    if (user && user.isServerAdmin) {
+        resolve();
+        return;
+    }
+    if (pgBoot.storageMode() === 'postgres' && user && user.name) {
+        pgBoot.getMembershipFlags(user.name)
+            .then((flags) => {
+                if (flags && flags.isServerAdmin) resolve();
+                else reject(['errors-forbidden-for-non-admin']);
+            })
+            .catch(reject);
+        return;
+    }
+    reject(['errors-forbidden-for-non-admin']);
+});
+const userIsServerAdminCheck = (args, user, db) => userIsLogged(args, user)
+    .then(() => userIsServerAdmin(args, user, db));
+const userIsLoggedOnlyCheck = (args, user) => userIsLogged(args, user);
 const roleIsOrganizer = (args, user) => new Promise((resolve, reject) => {
     user && user.role === 'organizer' ? resolve() : reject(['errors-forbidden-for-role', [user && user.role]]);
 });
@@ -516,6 +535,21 @@ const apiInfo = {
         updateSliderValue: organizerContentCreateCheck,
         removeSlider: organizerContentCreateCheck,
     },
+    historyAPI: {
+        listEntityRevisions: roleIsOrganizerCheck,
+        getEntityRevision: roleIsOrganizerCheck,
+        restoreEntityRevision: organizerContentCreateCheck,
+        cleanupEntityRevisions: organizerIsAdminCheck,
+    },
+    projectsAPI: {
+        listProjects: userIsLoggedOnlyCheck,
+        getCurrentProject: userIsLoggedOnlyCheck,
+        setCurrentProject: userIsLoggedOnlyCheck,
+        createProject: userIsServerAdminCheck,
+        archiveProject: userIsServerAdminCheck,
+        requestProjectJoin: userIsLoggedOnlyCheck,
+        importProjectFromJson: userIsServerAdminCheck,
+    },
 };
 
 const apiInfoObj = R.mergeAll(R.values(apiInfo));
@@ -628,8 +662,28 @@ exports.applyPermissionProxy = R.curry(function applyPermissionProxy(makeValidat
                         apiInfoObj[prop].apply(thisArg, checkArgs).then(() => {
                             Promise.resolve(target2.apply(target, argumentsList)).then((result) => {
                                 applyOwnershipSideEffects(prop, args, user, target);
+                                if (pgBoot.storageMode() === 'postgres' && !String(prop).startsWith('get') && !String(prop).startsWith('list') && prop !== 'login') {
+                                    pgBoot.auditMutate({
+                                        command: prop,
+                                        args,
+                                        username: user && user.name,
+                                        ok: true,
+                                        getDatabase: () => target.getDatabase(),
+                                    }).catch(() => {});
+                                }
                                 resolve(result);
-                            }, reject);
+                            }, (err) => {
+                                if (pgBoot.storageMode() === 'postgres') {
+                                    pgBoot.auditMutate({
+                                        command: prop,
+                                        args,
+                                        username: user && user.name,
+                                        ok: false,
+                                        errorText: err && (err.message || String(err)),
+                                    }).catch(() => {});
+                                }
+                                reject(err);
+                            });
                         }, (err) => reject(err instanceof Error ? err : makeValidationError(err)));
                     });
                 },

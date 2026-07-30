@@ -72,6 +72,9 @@ function createToken(user, { longLived = false } = {}) {
     const userForSession = {
         name: user.name,
         role: user.role,
+        projectId: user.projectId || null,
+        projectSlug: user.projectSlug || null,
+        isServerAdmin: !!user.isServerAdmin,
     };
     const expiresAt = Date.now() + ttlMs;
     tokenStore.set(token, {

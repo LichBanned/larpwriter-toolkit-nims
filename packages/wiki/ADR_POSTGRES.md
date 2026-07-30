@@ -35,4 +35,4 @@ NIMS хранит всю игру в одном JSON-документе в па�
 ## Связанные планы
 
 - Cutover: этот ADR + миграции/импортёр
-- Follow-up: история UI + мультипроект UI
+- Follow-up: [HISTORY_MULTIPROJECT.md](./HISTORY_MULTIPROJECT.md) — история UI + мультипроект UI

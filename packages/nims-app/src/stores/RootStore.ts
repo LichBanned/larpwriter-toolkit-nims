@@ -7,6 +7,7 @@ import { CharactersStore } from './CharactersStore';
 import { StoriesStore } from './StoriesStore';
 import { GroupsStore } from './GroupsStore';
 import { RelationsStore } from './RelationsStore';
+import { ProjectStore } from './ProjectStore';
 
 export class RootStore {
   api: ApiStore;
@@ -17,6 +18,7 @@ export class RootStore {
   stories: StoriesStore;
   groups: GroupsStore;
   relations: RelationsStore;
+  projects: ProjectStore;
 
   constructor() {
     this.auth = new AuthStore(this);
@@ -27,6 +29,7 @@ export class RootStore {
     this.stories = new StoriesStore(this);
     this.groups = new GroupsStore(this);
     this.relations = new RelationsStore(this);
+    this.projects = new ProjectStore(this);
     makeAutoObservable(this, {}, { autoBind: true });
   }
 }

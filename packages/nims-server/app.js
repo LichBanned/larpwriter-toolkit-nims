@@ -56,6 +56,9 @@ async function initDatabase() {
             }
             : undefined,
     );
+    const { attachHistoryAndProjectsApi } = require('./pg/attachApi');
+    attachHistoryAndProjectsApi(db, dbms);
+
     const preparedDb = wrapWithPermissions(db);
     dbms.rawDb = db;
     const getSnapshot = () => db.getDatabase();
@@ -66,6 +69,20 @@ async function initDatabase() {
 
     if (shouldEnsureAdmin) {
         await db.ensureAdminExists(config.get('inits:adminLogin'), config.get('inits:adminPass'));
+    }
+
+    if (mode === 'postgres') {
+        const serverAdminName = process.env.NIMS_SERVER_ADMIN || config.get('inits:adminLogin');
+        if (serverAdminName) {
+            try {
+                const { setAccountServerAdmin } = require('../../nims-dbms/pg/projectsApi');
+                const { withClient } = require('../../nims-dbms/pg/storage');
+                await withClient((client) => setAccountServerAdmin(client, serverAdminName, true));
+                log.info(`server-admin ensured for ${serverAdminName}`);
+            } catch (err) {
+                log.error(`server-admin bootstrap: ${err && err.message ? err.message : err}`);
+            }
+        }
     }
 
     try {

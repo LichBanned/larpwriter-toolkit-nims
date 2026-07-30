@@ -14,6 +14,7 @@ import {
 import { useDisclosure } from '@mantine/hooks';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
+import { Select } from '@mantine/core';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { AppCredits } from '@/components/AppCredits';
 import { useRootStore } from '@/stores';
@@ -27,9 +28,13 @@ const playerNav = [
 export const PlayerShell = observer(function PlayerShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { auth, api } = useRootStore();
+  const { auth, api, projects } = useRootStore();
   const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure();
   const [hasCharacter, setHasCharacter] = useState(false);
+
+  useEffect(() => {
+    void projects.load(false);
+  }, [projects]);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +73,23 @@ export const PlayerShell = observer(function PlayerShell({ children }: { childre
           <Group gap="sm" wrap="nowrap">
             <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" aria-label="Меню" />
             <Text fw={700} size="lg">NIMS</Text>
+            {auth.user?.projectSlug && (
+              <Select
+                size="xs"
+                w={140}
+                allowDeselect={false}
+                value={auth.user.projectSlug}
+                data={projects.projects
+                  .filter((p) => !p.joinable && !p.archived_at)
+                  .map((p) => ({ value: p.slug, label: p.name || p.slug }))}
+                onChange={(slug) => {
+                  if (slug && slug !== auth.user?.projectSlug) {
+                    void projects.select(slug).then(() => window.location.reload());
+                  }
+                }}
+                visibleFrom="xs"
+              />
+            )}
             <Text size="sm" c="dimmed" visibleFrom="xs">Кабинет игрока</Text>
           </Group>
           <Group gap="xs" wrap="nowrap">

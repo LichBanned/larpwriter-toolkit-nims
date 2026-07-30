@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { useRootStore } from '@/stores';
 import { ProfileStructureEditor } from './ProfileStructureEditor';
 import { CharacterConnections } from './CharacterConnections';
+import { EntityHistoryTab } from '@/features/history/EntityHistoryTab';
 import { BindingChangeButton, ProfileBindingsTable } from './ProfileBindingControls';
 import { EntityPageLayout } from '@/components/EntityPageLayout';
 import { DeleteEntityButton } from '@/components/DeleteEntityButton';
@@ -221,6 +222,7 @@ function CharactersPage() {
                     <ScrollableTabsList>
                       <Tabs.Tab value="profile">Профиль</Tabs.Tab>
                       <Tabs.Tab value="links">Связи</Tabs.Tab>
+                      <Tabs.Tab value="history">История</Tabs.Tab>
                     </ScrollableTabsList>
 
                     <Tabs.Panel value="profile" pt="md">
@@ -298,6 +300,9 @@ function CharactersPage() {
 
                     <Tabs.Panel value="links" pt="md">
                       <CharacterConnections characterName={selected} />
+                    </Tabs.Panel>
+                    <Tabs.Panel value="history" pt="md">
+                      <EntityHistoryTab entityType="character" entityId={selected} />
                     </Tabs.Panel>
                   </Tabs>
 

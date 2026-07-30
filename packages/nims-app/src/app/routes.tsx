@@ -16,6 +16,7 @@ const RoleGrid = lazy(() => import('@/features/roleGrid/RoleGridPage'));
 const ProfileFilter = lazy(() => import('@/features/profileFilter/ProfileFilterPage'));
 const Search = lazy(() => import('@/features/search/SearchPage'));
 const Admin = lazy(() => import('@/features/admin/AdminPage'));
+const Projects = lazy(() => import('@/features/projects/ProjectsPage'));
 
 function PageLoader() {
   return (
@@ -43,6 +44,7 @@ export function AppRoutes() {
         <Route path="/profile-filter" element={<ProfileFilter />} />
         <Route path="/search" element={<Search />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/projects" element={<Projects />} />
       </Routes>
     </Suspense>
   );

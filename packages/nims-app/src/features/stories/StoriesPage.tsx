@@ -21,6 +21,7 @@ import { PermissionHint } from '@/components/PermissionHint';
 import { HScroll } from '@/components/HScroll';
 import { ScrollableTabsList } from '@/components/ScrollableTabsList';
 import { useIsCompact } from '@/hooks/useIsCompact';
+import { EntityHistoryTab } from '@/features/history/EntityHistoryTab';
 
 interface StoryEvent {
   name: string;
@@ -425,6 +426,7 @@ function StoriesPage() {
                     <Tabs.Tab value="events">События ({events.length})</Tabs.Tab>
                     <Tabs.Tab value="characters">Персонажи ({storyChars.length})</Tabs.Tab>
                     <Tabs.Tab value="writer">Мастерский текст</Tabs.Tab>
+                    <Tabs.Tab value="history">История</Tabs.Tab>
                   </ScrollableTabsList>
 
                   <Tabs.Panel value="events" pt="md">
@@ -810,6 +812,9 @@ function StoriesPage() {
                         </Button>
                       </Group>
                     </Stack>
+                  </Tabs.Panel>
+                  <Tabs.Panel value="history" pt="md">
+                    <EntityHistoryTab entityType="story" entityId={selected} />
                   </Tabs.Panel>
                 </Tabs>
 

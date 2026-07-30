@@ -325,11 +325,13 @@ async function saveDatabaseToProject(client, database, slug, opts = {}) {
         accountId = ins.rows[0].id;
       }
       await client.query(
-        `INSERT INTO project_memberships (project_id, account_id, is_admin, is_editor, player_profile_name)
-         VALUES ($1,$2,$3,$4,$5)
+        `INSERT INTO project_memberships (project_id, account_id, is_admin, is_editor, player_profile_name, status, member_role)
+         VALUES ($1,$2,$3,$4,$5,'active',$6)
          ON CONFLICT (project_id, account_id) DO UPDATE SET
            is_admin = EXCLUDED.is_admin, is_editor = EXCLUDED.is_editor,
            player_profile_name = COALESCE(EXCLUDED.player_profile_name, project_memberships.player_profile_name),
+           status = 'active',
+           member_role = EXCLUDED.member_role,
            updated_at = now()`,
         [
           projectId,
@@ -337,6 +339,7 @@ async function saveDatabaseToProject(client, database, slug, opts = {}) {
           admins.has(username),
           editors.has(username),
           kind === 'player' || kind === 'both' ? (info?.profileName || null) : null,
+          kind === 'player' ? 'player' : 'organizer',
         ],
       );
       return accountId;
@@ -401,8 +404,10 @@ async function listProjectSlugs(client) {
 
 async function getAccountAuth(client, username) {
   const r = await client.query(
-    `SELECT a.id, a.username, a.salt, a.password_hash, a.kind,
-            m.project_id, m.is_admin, m.is_editor, m.player_profile_name, p.slug AS project_slug
+    `SELECT a.id, a.username, a.salt, a.password_hash, a.kind, a.is_server_admin,
+            m.project_id, m.is_admin, m.is_editor, m.player_profile_name,
+            m.status AS membership_status, m.member_role,
+            p.slug AS project_slug
      FROM accounts a
      LEFT JOIN project_memberships m ON m.account_id = a.id
      LEFT JOIN projects p ON p.id = m.project_id AND p.archived_at IS NULL

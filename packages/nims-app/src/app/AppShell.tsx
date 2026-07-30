@@ -11,6 +11,7 @@ import {
   Button,
   Alert,
   Divider,
+  Select,
   Stack,
 } from '@mantine/core';
 import { useDisclosure, useLocalStorage } from '@mantine/hooks';
@@ -72,6 +73,7 @@ const navSections: NavSection[] = [
     title: 'Админ',
     items: [
       { path: '/admin', labelKey: 'nav.admin', icon: '⚙️' },
+      { path: '/projects', labelKey: 'Проекты', icon: '📁' },
     ],
   },
 ];
@@ -102,7 +104,11 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useTranslation();
-  const { auth, permissions } = useRootStore();
+  const { auth, permissions, projects } = useRootStore();
+
+  useEffect(() => {
+    if (auth.isLoggedIn) void projects.load(false);
+  }, [auth.isLoggedIn, projects]);
 
   // Icon-only rail is for desktop/tablet compact only — never in the mobile drawer.
   const iconOnly = collapsed && !isMobile;
@@ -203,14 +209,30 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
             <Text fw={700} size="lg" style={{ cursor: 'pointer', flexShrink: 0 }} onClick={() => go('/')}>
               NIMS
             </Text>
+            {auth.user?.projectSlug && (
+              <Select
+                size="xs"
+                w={160}
+                allowDeselect={false}
+                value={auth.user.projectSlug}
+                data={projects.projects
+                  .filter((p) => !p.joinable && !p.archived_at)
+                  .map((p) => ({ value: p.slug, label: p.name || p.slug }))}
+                onChange={(slug) => {
+                  if (slug && slug !== auth.user?.projectSlug) void projects.select(slug);
+                }}
+                visibleFrom="sm"
+              />
+            )}
             <Text size="sm" c="dimmed" truncate style={{ minWidth: 0 }}>
               {pageTitle}
             </Text>
           </Group>
           <Group gap="xs" wrap="nowrap">
             {auth.user && (
-              <Text size="sm" c="dimmed" visibleFrom="md" truncate maw={140}>
+              <Text size="sm" c="dimmed" visibleFrom="md" truncate maw={180}>
                 {auth.user.name}
+                {auth.user.role ? ` · ${auth.user.role}` : ''}
               </Text>
             )}
             <ThemeToggle compact />
@@ -228,7 +250,14 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
 
       <MantineAppShell.Navbar p="xs">
         <MantineAppShell.Section grow component={ScrollArea} type="scroll" offsetScrollbars>
-          {navSections.map((section, sectionIndex) => (
+          {navSections.map((section, sectionIndex) => {
+            const items = section.items.filter((item) => {
+              if ('path' in item && item.path === '/projects') return auth.isServerAdmin;
+              if ('path' in item && item.path === '/admin') return auth.isOrganizer;
+              return true;
+            });
+            if (!items.length) return null;
+            return (
             <Fragment key={section.title}>
               {sectionIndex > 0 && <Divider my={iconOnly ? 6 : 8} />}
               {!iconOnly && (
@@ -244,9 +273,10 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
                   {section.title}
                 </Text>
               )}
-              {section.items.map(renderNavItem)}
+              {items.map(renderNavItem)}
             </Fragment>
-          ))}
+            );
+          })}
         </MantineAppShell.Section>
         <MantineAppShell.Section hiddenFrom="md" mt="xs">
           <Divider mb="sm" />

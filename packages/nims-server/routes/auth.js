@@ -43,6 +43,9 @@ module.exports = function (app, dbms) {
             user: {
                 name: req.user.name,
                 role: req.user.role,
+                projectId: req.user.projectId || null,
+                projectSlug: req.user.projectSlug || null,
+                isServerAdmin: !!req.user.isServerAdmin,
             },
         });
     });
@@ -77,7 +80,13 @@ module.exports = function (app, dbms) {
                     || req.query.format === 'json';
                 if (wantsJson) {
                     res.json({
-                        user: { name: user.name, role: user.role },
+                        user: {
+                            name: user.name,
+                            role: user.role,
+                            projectId: user.projectId || null,
+                            projectSlug: user.projectSlug || null,
+                            isServerAdmin: !!user.isServerAdmin,
+                        },
                     });
                     return;
                 }

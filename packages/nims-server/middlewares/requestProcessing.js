@@ -23,6 +23,21 @@ module.exports = ({ db, preparedDb } = {}) => {
         log.info(`Command: ${command}, params: ${params}`);
         params.push(req.user);
         preparedDb[command](...params).then((result) => {
+            if (command === 'setCurrentProject' && result && req.user) {
+                req.user.role = result.role || req.user.role;
+                req.user.projectSlug = result.slug || req.user.projectSlug;
+                req.user.projectId = result.projectId || req.user.projectId;
+                if (result.isServerAdmin != null) req.user.isServerAdmin = !!result.isServerAdmin;
+                req.logIn(req.user, (err) => {
+                    if (err) {
+                        next(err);
+                        return;
+                    }
+                    setHeader(res);
+                    res.end(stringify(result));
+                });
+                return;
+            }
             setHeader(res);
             res.end(stringify(result));
         }, next);
@@ -36,6 +51,21 @@ module.exports = ({ db, preparedDb } = {}) => {
         command = command.substring(1);
         params.push(req.user);
         preparedDb[command](...params).then((result) => {
+            if (command === 'setCurrentProject' && result && req.user) {
+                req.user.role = result.role || req.user.role;
+                req.user.projectSlug = result.slug || req.user.projectSlug;
+                req.user.projectId = result.projectId || req.user.projectId;
+                if (result.isServerAdmin != null) req.user.isServerAdmin = !!result.isServerAdmin;
+                req.logIn(req.user, (err) => {
+                    if (err) {
+                        next(err);
+                        return;
+                    }
+                    setHeader(res);
+                    res.end();
+                });
+                return;
+            }
             setHeader(res);
             res.end();
         }, next);
