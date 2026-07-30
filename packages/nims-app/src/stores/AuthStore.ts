@@ -160,7 +160,7 @@ export class AuthStore {
         const mine = this.root.projects.projects.filter((p) => !p.joinable && !p.archived_at);
         if (mine.length === 1) {
           try {
-            await this.root.projects.select(mine[0].slug);
+            await this.root.projects.select(mine[0].slug, { reloadPage: false });
           } catch {
             /* stay on picker */
           }

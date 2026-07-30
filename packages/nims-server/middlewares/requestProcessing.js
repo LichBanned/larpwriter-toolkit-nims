@@ -62,7 +62,7 @@ module.exports = ({ db, preparedDb } = {}) => {
                         return;
                     }
                     setHeader(res);
-                    res.end();
+                    res.end(stringify(result));
                 });
                 return;
             }

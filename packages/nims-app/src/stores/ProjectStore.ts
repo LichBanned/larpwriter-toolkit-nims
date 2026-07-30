@@ -53,33 +53,53 @@ export class ProjectStore {
 
   async select(slug: string, opts: { reloadPage?: boolean } = {}) {
     const reloadPage = opts.reloadPage !== false;
-    const result = await this.root.api.call<{
+    let result: {
       slug: string;
       role: string;
       projectId?: number | string;
       isServerAdmin?: boolean;
       name?: string;
-    }>('setCurrentProject', { slug });
+    } | undefined;
+    try {
+      result = await this.root.api.call<{
+        slug: string;
+        role: string;
+        projectId?: number | string;
+        isServerAdmin?: boolean;
+        name?: string;
+      }>('setCurrentProject', { slug });
+    } catch (e) {
+      // Still try hard reload if session may have changed server-side.
+      if (reloadPage && typeof window !== 'undefined') {
+        window.location.href = `/?project=${encodeURIComponent(slug)}&_=${Date.now()}`;
+      }
+      throw e;
+    }
     runInAction(() => {
-      if (this.root.auth.user) {
+      if (this.root.auth.user && result) {
         this.root.auth.user = {
           ...this.root.auth.user,
           role: result.role || this.root.auth.user.role,
-          projectSlug: result.slug,
+          projectSlug: result.slug || slug,
           projectId: result.projectId ?? this.root.auth.user.projectId,
           isServerAdmin: result.isServerAdmin ?? this.root.auth.user.isServerAdmin,
+        };
+      } else if (this.root.auth.user) {
+        this.root.auth.user = {
+          ...this.root.auth.user,
+          projectSlug: slug,
         };
       }
     });
     this.root.permissions.clear();
-    // Full reload so shells/stores remount against the new project engine.
+    // Force a real navigation even when already on "/".
     if (reloadPage && typeof window !== 'undefined') {
-      window.location.assign('/');
-      return result;
+      window.location.href = `/?project=${encodeURIComponent(slug)}&_=${Date.now()}`;
+      return result as NonNullable<typeof result>;
     }
     await this.root.permissions.load();
     await this.root.meta.load();
-    return result;
+    return result as NonNullable<typeof result>;
   }
 
   async join(slug: string) {
