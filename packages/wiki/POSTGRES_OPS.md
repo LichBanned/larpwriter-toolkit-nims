@@ -23,7 +23,7 @@ npm run import-json -- --file /path/to/prod-nims-base1.json --slug main
 ## Runtime
 
 - При старте: миграции → hydrate `project_documents` → `DatabaseEngine` в памяти.
-- Autosave / `setDatabase`: write-through в Postgres (документ + нормализованные таблицы + accounts).
+- Mutate-команды (REST/MCP) и autosave: write-through в Postgres (документ + нормализованные таблицы + accounts), debounce ~250ms.
 - `NIMS_STORAGE=json` — прежнее поведение с файловым autosave.
 
 ## Импорт / экспорт

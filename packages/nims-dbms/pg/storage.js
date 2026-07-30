@@ -126,6 +126,7 @@ async function saveDatabaseToProject(client, database, slug, opts = {}) {
       if (!Array.isArray(items)) return;
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
+        if (!item || item.name == null) continue;
         await client.query(
           `INSERT INTO profile_field_defs
             (project_id, profile_type, name, field_type, default_value, player_access, do_export, show_in_role_grid, sort_order)
@@ -291,6 +292,7 @@ async function saveDatabaseToProject(client, database, slug, opts = {}) {
     const sliders = database.Sliders || [];
     for (let i = 0; i < sliders.length; i++) {
       const s = sliders[i];
+      if (!s) continue;
       await client.query(
         `INSERT INTO sliders (project_id, sort_order, name, top, bottom, value) VALUES ($1,$2,$3,$4,$5,$6)`,
         [projectId, i, s.name || '', s.top || '', s.bottom || '', s.value ?? 0],
@@ -341,6 +343,7 @@ async function saveDatabaseToProject(client, database, slug, opts = {}) {
     };
 
     for (const [username, info] of Object.entries(usersInfo)) {
+      if (!info) continue;
       const accountId = await ensureAccount(username, info, playersInfo[username] ? 'both' : 'organizer');
       const typeMap = { characters: 'character', stories: 'story', groups: 'group', players: 'player' };
       for (const entityType of ['characters', 'stories', 'groups', 'players']) {

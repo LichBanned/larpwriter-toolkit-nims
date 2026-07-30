@@ -114,6 +114,54 @@ async function ownsEntity(username, entityType, entityName) {
   });
 }
 
+const READ_OR_AUTH = /^(get|is|has|login|ensure|subscribe)/;
+
+/**
+ * Proxy DBMS methods so mutating calls schedule a write-through persist (debounced).
+ * @param {object} db
+ * @param {() => Promise<object>} [getSnapshot] — prefer raw engine getDatabase
+ */
+function wrapDbForPersist(db, getSnapshot) {
+  if (storageMode() !== 'postgres' || !db) return db;
+  const snapshot = typeof getSnapshot === 'function'
+    ? getSnapshot
+    : () => db.getDatabase();
+  let timer = null;
+  let chain = Promise.resolve();
+  const schedule = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      chain = chain
+        .then(() => snapshot())
+        .then((data) => persistDatabase(data))
+        .catch((err) => {
+          const msg = err && err.stack ? err.stack : (err && err.message ? err.message : err);
+          log.error(`postgres write-through: ${msg}`);
+        });
+    }, 250);
+  };
+  return new Proxy(db, {
+    get(target, prop, receiver) {
+      const val = Reflect.get(target, prop, receiver);
+      if (typeof val !== 'function') return val;
+      const name = String(prop);
+      if (READ_OR_AUTH.test(name)) {
+        return function (...args) {
+          return val.apply(target, args);
+        };
+      }
+      return function (...args) {
+        const result = val.apply(target, args);
+        return Promise.resolve(result).then((out) => {
+          schedule();
+          return out;
+        });
+      };
+    },
+  });
+}
+
 module.exports = {
   storageMode,
   projectSlug,
@@ -123,4 +171,5 @@ module.exports = {
   verifyAccountPassword,
   getMembershipFlags,
   ownsEntity,
+  wrapDbForPersist,
 };

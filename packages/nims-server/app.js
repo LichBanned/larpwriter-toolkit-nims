@@ -57,9 +57,10 @@ async function initDatabase() {
             : undefined,
     );
     const preparedDb = wrapWithPermissions(db);
-    dbms.db = db;
     dbms.rawDb = db;
-    dbms.preparedDb = preparedDb;
+    const getSnapshot = () => db.getDatabase();
+    dbms.db = pgBoot.wrapDbForPersist(db, getSnapshot);
+    dbms.preparedDb = pgBoot.wrapDbForPersist(preparedDb, getSnapshot);
 
     await db.setDatabase({ database: seedDb, preserveManagementInfo: true });
 
@@ -82,20 +83,9 @@ async function initDatabase() {
     if (mode === 'postgres') {
         await pgBoot.persistDatabase(await db.getDatabase());
         log.info(`PostgreSQL project slug=${pgBoot.projectSlug()} persisted`);
-
-        const origSetDatabase = db.setDatabase.bind(db);
-        db.setDatabase = async (args) => {
-            const result = await origSetDatabase(args);
-            try {
-                await pgBoot.persistDatabase(await db.getDatabase());
-            } catch (err) {
-                log.error(`postgres persist after setDatabase: ${err && err.message ? err.message : err}`);
-            }
-            return result;
-        };
     }
 
-    require('./autosave')(db);
+    require('./autosave')(dbms.db);
 }
 
 const sessionOptions = config.get('session');
