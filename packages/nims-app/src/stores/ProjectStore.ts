@@ -51,7 +51,8 @@ export class ProjectStore {
     }
   }
 
-  async select(slug: string) {
+  async select(slug: string, opts: { reloadPage?: boolean } = {}) {
+    const reloadPage = opts.reloadPage !== false;
     const result = await this.root.api.call<{
       slug: string;
       role: string;
@@ -70,6 +71,12 @@ export class ProjectStore {
         };
       }
     });
+    this.root.permissions.clear();
+    // Full reload so shells/stores remount against the new project engine.
+    if (reloadPage && typeof window !== 'undefined') {
+      window.location.assign('/');
+      return result;
+    }
     await this.root.permissions.load();
     await this.root.meta.load();
     return result;

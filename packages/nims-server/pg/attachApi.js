@@ -201,14 +201,16 @@ function attachHistoryAndProjectsApi(rawDb, dbmsRef) {
     await withClient((client) => mergeActivePlayerMemberships(client, slug, loaded.database));
     pgBoot.setActiveProjectSlug(slug);
     await rawDb.setDatabase({ database: loaded.database, preserveManagementInfo: false });
-    const role = roleFromMembership(info.membership, isServerAdmin) || (isServerAdmin ? 'organizer' : 'player');
+    const role = isServerAdmin
+      ? 'organizer'
+      : (roleFromMembership(info.membership, false) || 'player');
     const sessionPatch = {
-      projectId: info.membership ? info.membership.project_id : loaded.projectId,
+      projectId: (info.membership && info.membership.project_id) || loaded.projectId,
       projectSlug: slug,
       role,
       isServerAdmin,
-      isAdmin: !!(info.membership && info.membership.is_admin),
-      isEditor: !!(info.membership && info.membership.is_editor),
+      isAdmin: isServerAdmin || !!(info.membership && info.membership.is_admin),
+      isEditor: isServerAdmin || !!(info.membership && info.membership.is_editor),
     };
     if (dbmsRef && typeof dbmsRef.onProjectChanged === 'function') {
       await dbmsRef.onProjectChanged(sessionPatch);

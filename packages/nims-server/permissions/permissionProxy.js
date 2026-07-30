@@ -59,6 +59,10 @@ const roleIsOrganizer = (args, user) => new Promise((resolve, reject) => {
     user && user.role === 'organizer' ? resolve() : reject(['errors-forbidden-for-role', [user && user.role]]);
 });
 const organizerIsAdmin = (args, user, db) => new Promise((resolve, reject) => {
+    if (user && user.isServerAdmin) {
+        resolve();
+        return;
+    }
     const fromMi = () => db.getManagementInfo().then((res) => (
         getAdminsList(res).includes(user.name) ? resolve() : reject(['errors-forbidden-for-non-admin'])
     )).catch(reject);
@@ -69,12 +73,16 @@ const organizerIsAdmin = (args, user, db) => new Promise((resolve, reject) => {
     }
     pgBoot.getMembershipFlags(user.name)
         .then((flags) => {
-            if (flags && flags.isAdmin) resolve();
+            if (flags && (flags.isServerAdmin || flags.isAdmin)) resolve();
             else fromMi();
         })
         .catch(() => fromMi());
 });
 const organizerIsEditor = (args, user, db) => new Promise((resolve, reject) => {
+    if (user && user.isServerAdmin) {
+        resolve();
+        return;
+    }
     const fromMi = () => db.getManagementInfo().then((res) => (
         getEditorsList(res).includes(user.name) ? resolve() : reject(['errors-forbidden-for-non-editor'])
     )).catch(reject);
@@ -85,7 +93,7 @@ const organizerIsEditor = (args, user, db) => new Promise((resolve, reject) => {
     }
     pgBoot.getMembershipFlags(user.name)
         .then((flags) => {
-            if (flags && (flags.isEditor || flags.isAdmin)) resolve();
+            if (flags && (flags.isServerAdmin || flags.isEditor || flags.isAdmin)) resolve();
             else fromMi();
         })
         .catch(() => fromMi());
@@ -96,6 +104,10 @@ const canPlayerCreateChar = (args, user, db) => new Promise((resolve, reject) =>
     )).catch(reject);
 });
 const checkEditorMode = (args, user, db) => new Promise((resolve, reject) => {
+    if (user && user.isServerAdmin) {
+        resolve();
+        return;
+    }
     const fromMi = () => db.getManagementInfo().then((res) => {
         const editors = getEditorsList(res);
         if (editors.length === 0) {
@@ -113,7 +125,7 @@ const checkEditorMode = (args, user, db) => new Promise((resolve, reject) => {
     }
     pgBoot.getMembershipFlags(user.name)
         .then((flags) => {
-            if (flags && (flags.isEditor || flags.isAdmin)) {
+            if (flags && (flags.isServerAdmin || flags.isEditor || flags.isAdmin)) {
                 resolve();
                 return;
             }

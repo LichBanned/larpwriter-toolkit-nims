@@ -48,11 +48,13 @@ export class PermissionsStore {
 
   /** Meta, DB import, profile structure, org management */
   get canAdminOps() {
+    if (this.root.auth.isServerAdmin) return true;
     return this.isOrganizer && this.isProjectAdmin;
   }
 
   /** Create characters/stories/groups — respect editor lock when active */
   get canCreateEntities() {
+    if (this.root.auth.isServerAdmin) return true;
     if (!this.isOrganizer) return false;
     if (this.editorModeActive) return this.isEditor;
     return true;
@@ -63,6 +65,7 @@ export class PermissionsStore {
    * Editor mode ON → only editors; OFF → admin or owner.
    */
   canEditEntity(owner: string | undefined | null): boolean {
+    if (this.root.auth.isServerAdmin) return true;
     if (!this.isOrganizer) return false;
     if (this.editorModeActive) return this.isEditor;
     if (this.isProjectAdmin) return true;

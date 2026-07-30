@@ -219,7 +219,9 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
                   .filter((p) => !p.joinable && !p.archived_at)
                   .map((p) => ({ value: p.slug, label: p.name || p.slug }))}
                 onChange={(slug) => {
-                  if (slug && slug !== auth.user?.projectSlug) void projects.select(slug);
+                  if (slug && slug !== auth.user?.projectSlug) {
+                    void projects.select(slug);
+                  }
                 }}
                 visibleFrom="sm"
               />
