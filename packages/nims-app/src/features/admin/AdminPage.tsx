@@ -15,6 +15,7 @@ function AdminPage() {
   const { t } = useTranslation();
   const { api, permissions } = useRootStore();
   const [mgmt, setMgmt] = useState<any>(null);
+  const [serverAdmins, setServerAdmins] = useState<Set<string>>(new Set());
   const [charNames, setCharNames] = useState<string[]>([]);
   const [storyNames, setStoryNames] = useState<string[]>([]);
   const [groupNames, setGroupNames] = useState<string[]>([]);
@@ -50,6 +51,12 @@ function AdminPage() {
     const data = await api.get('getManagementInfo');
     setMgmt(data);
     await permissions.load();
+    try {
+      const names = await api.get<string[]>('listServerAdminUsernames');
+      setServerAdmins(new Set(Array.isArray(names) ? names : []));
+    } catch {
+      setServerAdmins(new Set());
+    }
   };
 
   const loadEntities = async () => {
@@ -421,39 +428,45 @@ function AdminPage() {
                       {Object.entries(mgmt.usersInfo).map(([name, info]: [string, any]) => {
                         const isUserAdmin = (mgmt.admins || []).includes(name);
                         const isUserEditor = (mgmt.editors || []).includes(name);
+                        const isSuperAdmin = serverAdmins.has(name);
                         return (
                           <Table.Tr key={name}>
                             <Table.Td>
                               {name}
+                              {isSuperAdmin && <Badge ml="xs" size="xs" color="violet">суперадмин</Badge>}
                               {isUserAdmin && <Badge ml="xs" size="xs" color="red">админ</Badge>}
                               {isUserEditor && <Badge ml="xs" size="xs" color="blue">редактор</Badge>}
-                              {!isUserAdmin && !isUserEditor && (
+                              {!isUserAdmin && !isUserEditor && !isSuperAdmin && (
                                 <Badge ml="xs" size="xs" color="gray" variant="outline">организатор</Badge>
                               )}
                             </Table.Td>
                             <Table.Td>{info.characters?.length || 0}</Table.Td>
                             <Table.Td>{info.stories?.length || 0}</Table.Td>
                             <Table.Td>
-                              <Group gap={4} wrap="wrap">
-                                {isUserAdmin ? (
-                                  <Button size="xs" variant="subtle" color="gray" onClick={async () => {
-                                    await api.call('revokeAdmin', { name });
-                                    await loadMgmt();
-                                  }}>Снять админа</Button>
-                                ) : (
-                                  <Button size="xs" variant="subtle" color="red" onClick={async () => {
-                                    await api.call('assignAdmin', { name });
-                                    await loadMgmt();
-                                  }}>Админ</Button>
-                                )}
-                                {isUserEditor ? (
-                                  <Button size="xs" variant="subtle" color="gray" onClick={() => handleRevokeEditor(name)}>Снять редактора</Button>
-                                ) : (
-                                  <Button size="xs" variant="subtle" color="blue" onClick={() => handleAssignEditor(name)}>Редактор</Button>
-                                )}
-                                <Button size="xs" variant="subtle" onClick={() => openChangePassword('organizer', name)}>Пароль</Button>
-                                <Button size="xs" variant="subtle" color="red" onClick={() => handleRemoveOrg(name)}>Удалить</Button>
-                              </Group>
+                              {isSuperAdmin ? (
+                                <Text size="xs" c="dimmed">Пароль — в разделе «Проекты»</Text>
+                              ) : (
+                                <Group gap={4} wrap="wrap">
+                                  {isUserAdmin ? (
+                                    <Button size="xs" variant="subtle" color="gray" onClick={async () => {
+                                      await api.call('revokeAdmin', { name });
+                                      await loadMgmt();
+                                    }}>Снять админа</Button>
+                                  ) : (
+                                    <Button size="xs" variant="subtle" color="red" onClick={async () => {
+                                      await api.call('assignAdmin', { name });
+                                      await loadMgmt();
+                                    }}>Админ</Button>
+                                  )}
+                                  {isUserEditor ? (
+                                    <Button size="xs" variant="subtle" color="gray" onClick={() => handleRevokeEditor(name)}>Снять редактора</Button>
+                                  ) : (
+                                    <Button size="xs" variant="subtle" color="blue" onClick={() => handleAssignEditor(name)}>Редактор</Button>
+                                  )}
+                                  <Button size="xs" variant="subtle" onClick={() => openChangePassword('organizer', name)}>Пароль</Button>
+                                  <Button size="xs" variant="subtle" color="red" onClick={() => handleRemoveOrg(name)}>Удалить</Button>
+                                </Group>
+                              )}
                             </Table.Td>
                           </Table.Tr>
                         );

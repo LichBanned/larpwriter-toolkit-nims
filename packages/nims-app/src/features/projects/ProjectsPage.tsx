@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Stack, Title, Text, Button, Group, Paper, TextInput, FileButton, Alert, Badge, Loader,
+  PasswordInput,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { observer } from 'mobx-react-lite';
@@ -12,6 +13,9 @@ export const ProjectsPage = observer(function ProjectsPage() {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saPass, setSaPass] = useState('');
+  const [saPass2, setSaPass2] = useState('');
+  const [saSaving, setSaSaving] = useState(false);
 
   useEffect(() => {
     void projects.load(false);
@@ -67,11 +71,63 @@ export const ProjectsPage = observer(function ProjectsPage() {
     }
   }
 
+  async function changeServerAdminPassword() {
+    if (!saPass.trim()) return;
+    if (saPass !== saPass2) {
+      notifications.show({ message: 'Пароли не совпадают', color: 'red' });
+      return;
+    }
+    setSaSaving(true);
+    try {
+      await api.call('changeServerAdminPassword', { newPassword: saPass.trim() });
+      setSaPass('');
+      setSaPass2('');
+      notifications.show({ message: 'Пароль суперадмина обновлён', color: 'green' });
+    } catch (e: any) {
+      notifications.show({ message: e?.message || 'Не удалось сменить пароль', color: 'red' });
+    } finally {
+      setSaSaving(false);
+    }
+  }
+
   return (
     <Stack gap="md">
       <Title order={3}>Проекты</Title>
       <Text c="dimmed" size="sm">Управление инстансом (server-admin)</Text>
       {error && <Alert color="red">{error}</Alert>}
+
+      <Paper withBorder p="md" radius="md">
+        <Stack gap="sm">
+          <Text fw={600}>Пароль суперадмина</Text>
+          <Text size="sm" c="dimmed">
+            Логин: <Text span fw={600}>{auth.user?.name}</Text>
+            . Меняется здесь, не в админке проекта.
+          </Text>
+          <Group grow align="flex-end">
+            <PasswordInput
+              label="Новый пароль"
+              value={saPass}
+              onChange={(e) => setSaPass(e.currentTarget.value)}
+              autoComplete="new-password"
+            />
+            <PasswordInput
+              label="Повтор"
+              value={saPass2}
+              onChange={(e) => setSaPass2(e.currentTarget.value)}
+              autoComplete="new-password"
+            />
+          </Group>
+          <Group>
+            <Button
+              loading={saSaving}
+              disabled={!saPass.trim() || saPass !== saPass2}
+              onClick={() => void changeServerAdminPassword()}
+            >
+              Сохранить пароль
+            </Button>
+          </Group>
+        </Stack>
+      </Paper>
 
       <Paper withBorder p="md" radius="md">
         <Stack gap="sm">

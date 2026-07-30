@@ -266,6 +266,106 @@ function attachHistoryAndProjectsApi(rawDb, dbmsRef) {
       storage: pgBoot.storageMode(),
     };
   };
+
+  rawDb.listServerAdminUsernames = async function listServerAdminUsernamesApi() {
+    if (pgBoot.storageMode() !== 'postgres') {
+      const name = process.env.NIMS_SERVER_ADMIN || process.env.NIMS_ADMIN_LOGIN || 'admin';
+      return [name];
+    }
+    return withClient(async (client) => {
+      const r = await client.query(
+        `SELECT username FROM accounts WHERE is_server_admin = true ORDER BY username`,
+      );
+      return r.rows.map((row) => row.username);
+    });
+  };
+
+  const origChangeOrganizerPassword = rawDb.changeOrganizerPassword
+    && rawDb.changeOrganizerPassword.bind(rawDb);
+  if (origChangeOrganizerPassword) {
+    rawDb.changeOrganizerPassword = async function changeOrganizerPasswordGuarded(args = {}, user) {
+      const userName = String(args.userName || '').trim();
+      if (userName && pgBoot.storageMode() === 'postgres') {
+        const isSa = await withClient(async (client) => {
+          const r = await client.query(
+            `SELECT 1 FROM accounts WHERE username = $1 AND is_server_admin = true LIMIT 1`,
+            [userName],
+          );
+          return r.rows.length > 0;
+        });
+        if (isSa) {
+          throw Object.assign(new Error('server-admin-password'), {
+            messageId: 'errors-forbidden',
+            message: 'Пароль суперадмина меняется в разделе «Проекты»',
+          });
+        }
+      }
+      return origChangeOrganizerPassword(args, user);
+    };
+  }
+
+  rawDb.changeServerAdminPassword = async function changeServerAdminPasswordApi(args = {}, user) {
+    if (!user || !user.isServerAdmin || !user.name) {
+      throw Object.assign(new Error('forbidden'), { messageId: 'errors-forbidden' });
+    }
+    const newPassword = String(args.newPassword || '');
+    if (!newPassword) {
+      throw Object.assign(new Error('password-required'), { messageId: 'errors-password-is-not-specified' });
+    }
+    const username = user.name;
+    const crypto = require('crypto');
+    const saltHex = crypto.randomBytes(16).toString('hex');
+    const hashedPassword = crypto.scryptSync(newPassword, saltHex, 64).toString('hex');
+    const salt = `scrypt$${saltHex}`;
+
+    if (pgBoot.storageMode() === 'postgres') {
+      await withClient(async (client) => {
+        const upd = await client.query(
+          `UPDATE accounts
+           SET salt = $2, password_hash = $3, updated_at = now()
+           WHERE username = $1 AND is_server_admin = true
+           RETURNING id`,
+          [username, salt, hashedPassword],
+        );
+        if (!upd.rows.length) {
+          throw Object.assign(new Error('not-server-admin'), { messageId: 'errors-user-is-not-found' });
+        }
+        const docs = await client.query('SELECT project_id, document FROM project_documents');
+        for (const row of docs.rows) {
+          const doc = row.document;
+          const info = doc
+            && doc.ManagementInfo
+            && doc.ManagementInfo.UsersInfo
+            && doc.ManagementInfo.UsersInfo[username];
+          if (!info) continue;
+          const next = JSON.parse(JSON.stringify(doc));
+          next.ManagementInfo.UsersInfo[username] = {
+            ...next.ManagementInfo.UsersInfo[username],
+            salt,
+            hashedPassword,
+          };
+          await client.query(
+            `UPDATE project_documents SET document = $2::jsonb, updated_at = now() WHERE project_id = $1`,
+            [row.project_id, JSON.stringify(next)],
+          );
+        }
+      });
+    }
+
+    // Keep in-memory MI in sync with the same hash (do not re-hash via setPassword).
+    try {
+      const usersInfo = rawDb.database
+        && rawDb.database.ManagementInfo
+        && rawDb.database.ManagementInfo.UsersInfo;
+      if (usersInfo && usersInfo[username]) {
+        usersInfo[username].salt = salt;
+        usersInfo[username].hashedPassword = hashedPassword;
+      }
+    } catch {
+      /* ignore */
+    }
+    return { ok: true, username };
+  };
 }
 
 module.exports = { attachHistoryAndProjectsApi };

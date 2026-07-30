@@ -513,6 +513,8 @@ const apiInfo = {
         changeAdaptationRightsMode: organizerIsAdminCheck,
         createOrganizer: organizerIsAdminCheck,
         changeOrganizerPassword: organizerIsAdminCheck,
+        changeServerAdminPassword: userIsServerAdminCheck,
+        listServerAdminUsernames: organizerIsAdminCheck,
         removeOrganizer: organizerIsAdminCheck,
         assignCharactersToOrganizer: organizerIsAdminCheck,
         assignStoriesToOrganizer: organizerIsAdminCheck,
