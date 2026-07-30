@@ -115,12 +115,12 @@ async function verifyAccountPassword(username, password, verifyFn) {
   });
 }
 
-async function getMembershipFlags(username) {
+async function getMembershipFlags(username, preferredSlug) {
   if (storageMode() !== 'postgres') return null;
   return withClient(async (client) => {
     const rows = await getAccountAuth(client, username);
     if (!rows.length) return null;
-    const row = pickAuthRow(rows, projectSlug()) || rows[0];
+    const row = pickAuthRow(rows, preferredSlug || projectSlug()) || rows[0];
     return {
       isAdmin: !!row.is_admin,
       isEditor: !!row.is_editor,

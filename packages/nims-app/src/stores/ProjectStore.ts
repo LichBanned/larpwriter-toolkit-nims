@@ -51,6 +51,13 @@ export class ProjectStore {
     }
   }
 
+  /** Hard-navigate so SPA remounts; bootstrap applies setCurrentProject from ?project=. */
+  beginSwitch(slug: string) {
+    if (typeof window === 'undefined') return;
+    const url = `/?project=${encodeURIComponent(slug)}&_=${Date.now()}`;
+    window.location.replace(url);
+  }
+
   async select(slug: string, opts: { reloadPage?: boolean } = {}) {
     const reloadPage = opts.reloadPage !== false;
     let result: {
@@ -69,10 +76,7 @@ export class ProjectStore {
         name?: string;
       }>('setCurrentProject', { slug });
     } catch (e) {
-      // Still try hard reload if session may have changed server-side.
-      if (reloadPage && typeof window !== 'undefined') {
-        window.location.href = `/?project=${encodeURIComponent(slug)}&_=${Date.now()}`;
-      }
+      if (reloadPage) this.beginSwitch(slug);
       throw e;
     }
     runInAction(() => {
@@ -92,9 +96,8 @@ export class ProjectStore {
       }
     });
     this.root.permissions.clear();
-    // Force a real navigation even when already on "/".
-    if (reloadPage && typeof window !== 'undefined') {
-      window.location.href = `/?project=${encodeURIComponent(slug)}&_=${Date.now()}`;
+    if (reloadPage) {
+      this.beginSwitch(slug);
       return result as NonNullable<typeof result>;
     }
     await this.root.permissions.load();

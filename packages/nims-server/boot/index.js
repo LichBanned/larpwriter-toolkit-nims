@@ -34,7 +34,7 @@ async function resolveSessionUser(userStorage, parsed) {
     if (!parsed || !parsed.name) return null;
     const name = parsed.name;
     if (pgBoot.storageMode() === 'postgres') {
-        const flags = await pgBoot.getMembershipFlags(name);
+        const flags = await pgBoot.getMembershipFlags(name, parsed.projectSlug);
         if (flags) {
             const role = parsed.projectSlug && flags.projectSlug === parsed.projectSlug
                 ? (flags.role || parsed.role)

@@ -84,7 +84,7 @@ export const PlayerShell = observer(function PlayerShell({ children }: { childre
                   .map((p) => ({ value: p.slug, label: p.name || p.slug }))}
                 onChange={(slug) => {
                   if (slug && slug !== auth.user?.projectSlug) {
-                    void projects.select(slug);
+                    projects.beginSwitch(slug);
                   }
                 }}
                 visibleFrom="xs"

@@ -48,6 +48,23 @@ export class AuthStore {
     try {
       const ok = await this.fetchMe();
       if (ok) {
+        const wanted =
+          (typeof window !== 'undefined'
+            ? new URLSearchParams(window.location.search).get('project')
+            : null)
+          || this.user?.projectSlug
+          || null;
+        if (wanted) {
+          try {
+            // Sync server in-memory DB to session/URL project (needed after switch reload).
+            await this.root.projects.select(wanted, { reloadPage: false });
+            if (typeof window !== 'undefined' && window.location.search.includes('project=')) {
+              window.history.replaceState({}, '', window.location.pathname || '/');
+            }
+          } catch {
+            /* keep whatever /me returned */
+          }
+        }
         await this.root.projects.load(true);
         if (this.user?.projectSlug) await this.root.permissions.load();
         else this.root.permissions.clear();

@@ -220,7 +220,7 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
                   .map((p) => ({ value: p.slug, label: p.name || p.slug }))}
                 onChange={(slug) => {
                   if (slug && slug !== auth.user?.projectSlug) {
-                    void projects.select(slug);
+                    projects.beginSwitch(slug);
                   }
                 }}
                 visibleFrom="sm"
