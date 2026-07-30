@@ -4,13 +4,21 @@
   "description": "NIMS database engine",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./pg/storage": "./pg/storage.js"
+  },
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "migrate": "node scripts/migrate.js",
+    "import-json": "node scripts/import-json-base.js",
+    "export-json": "node scripts/export-json-base.js"
   },
   "dependencies": {
-    "nims-dbms-core": "0.8.0"
+    "nims-dbms-core": "0.8.0",
+    "pg": "^8.13.0"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

@@ -37,7 +37,12 @@ COPY --from=frontend /app/packages/nims-app/dist packages/nims-app/dist/
 RUN mkdir -p packages/nims-server/data \
     && npm cache clean --force
 
+# IMPORTANT: do NOT run webpack here (OOM on small VPS).
+# Expect prebuilt frontend at packages/nims-app/dist (built with vite).
+# For Postgres: set NIMS_STORAGE=postgres and DATABASE_URL at runtime.
+
 ENV NODE_ENV=production
+ENV NIMS_STORAGE=json
 EXPOSE 3001
 
 WORKDIR /app/packages/nims-server

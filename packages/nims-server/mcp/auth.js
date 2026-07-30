@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const config = require('../config');
+const pgBoot = require('../pg/boot');
 
 const { createRateLimiter } = require('../middlewares/rateLimit');
 
@@ -159,6 +160,14 @@ function mountAuthRoute(app, rawDb) {
             if (denyPlayerUser(user)) {
                 res.status(403).json({ error: 'Players cannot use MCP' });
                 return;
+            }
+            if (pgBoot.storageMode() === 'postgres') {
+                user.projectSlug = user.projectSlug || pgBoot.projectSlug();
+                const flags = await pgBoot.getMembershipFlags(username);
+                if (flags) {
+                    user.projectId = flags.projectId;
+                    user.projectSlug = flags.projectSlug || user.projectSlug;
+                }
             }
             const session = createToken(user, { longLived: !!longLived });
             res.json(session);

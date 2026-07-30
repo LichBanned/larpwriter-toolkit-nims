@@ -1,5 +1,28 @@
-# Server-only second stack (9443). Not committed — local/host deploy override.
+# NIMS v2 stack (9443) with PostgreSQL
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nims-v2-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nims}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nims}
+      POSTGRES_DB: ${POSTGRES_DB:-nims}
+    volumes:
+      - nims-v2-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nims} -d ${POSTGRES_DB:-nims}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - nims-v2
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   app:
     build:
       context: .
@@ -17,6 +40,12 @@ services:
       - NIMS_ADMIN_PASS=${NIMS_ADMIN_PASS:-}
       - NIMS_ENSURE_ADMIN=${NIMS_ENSURE_ADMIN:-0}
       - NIMS_COOKIE_SECURE=${NIMS_COOKIE_SECURE:-1}
+      - NIMS_STORAGE=${NIMS_STORAGE:-postgres}
+      - NIMS_PROJECT_SLUG=${NIMS_PROJECT_SLUG:-main}
+      - DATABASE_URL=${DATABASE_URL:-postgres://nims:nims@postgres:5432/nims}
+    depends_on:
+      postgres:
+        condition: service_healthy
     expose:
       - "3001"
     networks:
@@ -49,6 +78,8 @@ services:
 volumes:
   nims-v2-data:
     name: nims-v2-data
+  nims-v2-pg:
+    name: nims-v2-pg
   larp-rules_certbot_conf:
     external: true
 

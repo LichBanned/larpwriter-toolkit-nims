@@ -2,6 +2,7 @@
 'use strict';
 
 const R = require('ramda');
+const pgBoot = require('../pg/boot');
 
 const open = () => Promise.resolve();
 const forbidden = () => Promise.reject(['errors-forbidden']);
@@ -39,14 +40,36 @@ const roleIsOrganizer = (args, user) => new Promise((resolve, reject) => {
     user && user.role === 'organizer' ? resolve() : reject(['errors-forbidden-for-role', [user && user.role]]);
 });
 const organizerIsAdmin = (args, user, db) => new Promise((resolve, reject) => {
-    db.getManagementInfo().then((res) => (
+    const fromMi = () => db.getManagementInfo().then((res) => (
         getAdminsList(res).includes(user.name) ? resolve() : reject(['errors-forbidden-for-non-admin'])
     )).catch(reject);
+
+    if (pgBoot.storageMode() !== 'postgres') {
+        fromMi();
+        return;
+    }
+    pgBoot.getMembershipFlags(user.name)
+        .then((flags) => {
+            if (flags && flags.isAdmin) resolve();
+            else fromMi();
+        })
+        .catch(() => fromMi());
 });
 const organizerIsEditor = (args, user, db) => new Promise((resolve, reject) => {
-    db.getManagementInfo().then((res) => (
+    const fromMi = () => db.getManagementInfo().then((res) => (
         getEditorsList(res).includes(user.name) ? resolve() : reject(['errors-forbidden-for-non-editor'])
     )).catch(reject);
+
+    if (pgBoot.storageMode() !== 'postgres') {
+        fromMi();
+        return;
+    }
+    pgBoot.getMembershipFlags(user.name)
+        .then((flags) => {
+            if (flags && (flags.isEditor || flags.isAdmin)) resolve();
+            else fromMi();
+        })
+        .catch(() => fromMi());
 });
 const canPlayerCreateChar = (args, user, db) => new Promise((resolve, reject) => {
     db.getPlayersOptions().then((res) => (
@@ -54,7 +77,7 @@ const canPlayerCreateChar = (args, user, db) => new Promise((resolve, reject) =>
     )).catch(reject);
 });
 const checkEditorMode = (args, user, db) => new Promise((resolve, reject) => {
-    db.getManagementInfo().then((res) => {
+    const fromMi = () => db.getManagementInfo().then((res) => {
         const editors = getEditorsList(res);
         if (editors.length === 0) {
             resolve();
@@ -64,6 +87,20 @@ const checkEditorMode = (args, user, db) => new Promise((resolve, reject) => {
             reject(['errors-forbidden-for-non-editor']);
         }
     }).catch(reject);
+
+    if (pgBoot.storageMode() !== 'postgres') {
+        fromMi();
+        return;
+    }
+    pgBoot.getMembershipFlags(user.name)
+        .then((flags) => {
+            if (flags && (flags.isEditor || flags.isAdmin)) {
+                resolve();
+                return;
+            }
+            fromMi();
+        })
+        .catch(() => fromMi());
 });
 
 function userOwnedList(res, userName, type) {
@@ -77,34 +114,86 @@ const isProfileOwner = R.curry((property, args, user, db) => new Promise((resolv
     const profile = args[property];
     if (type === 'character') type = 'characters';
     if (type === 'player' || type === 'questionnaire') type = 'players';
-    db.getManagementInfo().then((res) => {
-        R.contains(profile, userOwnedList(res, user.name, type))
-            ? resolve()
-            : reject(['errors-organizer-is-not-an-owner', [profile]]);
+
+    const entityTypeMap = { characters: 'character', players: 'player', stories: 'story', groups: 'group' };
+    const sqlType = entityTypeMap[type];
+    const trySql = () => {
+        if (pgBoot.storageMode() !== 'postgres' || !sqlType || !profile) {
+            return Promise.resolve(null);
+        }
+        return pgBoot.ownsEntity(user.name, sqlType, profile);
+    };
+
+    trySql().then((owned) => {
+        if (owned === true) {
+            resolve();
+            return null;
+        }
+        return db.getManagementInfo().then((res) => {
+            R.contains(profile, userOwnedList(res, user.name, type))
+                ? resolve()
+                : reject(['errors-organizer-is-not-an-owner', [profile]]);
+        });
     }).catch(reject);
 }));
 const isGroupOwner = R.curry((property, args, user, db) => new Promise((resolve, reject) => {
     const group = args[property];
-    db.getManagementInfo().then((res) => {
-        R.contains(group, userOwnedList(res, user.name, 'groups'))
-            ? resolve()
-            : reject(['errors-organizer-is-not-an-owner', [group]]);
+    const trySql = () => {
+        if (pgBoot.storageMode() !== 'postgres' || !group) {
+            return Promise.resolve(null);
+        }
+        return pgBoot.ownsEntity(user.name, 'group', group);
+    };
+    trySql().then((owned) => {
+        if (owned === true) {
+            resolve();
+            return null;
+        }
+        return db.getManagementInfo().then((res) => {
+            R.contains(group, userOwnedList(res, user.name, 'groups'))
+                ? resolve()
+                : reject(['errors-organizer-is-not-an-owner', [group]]);
+        });
     }).catch(reject);
 }));
 const isStoryOwner = R.curry((property, args, user, db) => new Promise((resolve, reject) => {
-    const story = args[property];
-    db.getManagementInfo().then((res) => {
-        R.contains(story, userOwnedList(res, user.name, 'stories'))
-            ? resolve()
-            : reject(['errors-organizer-is-not-an-owner', [story]]);
+    const storyName = args[property];
+    const trySql = () => {
+        if (pgBoot.storageMode() !== 'postgres' || !storyName) {
+            return Promise.resolve(null);
+        }
+        return pgBoot.ownsEntity(user.name, 'story', storyName);
+    };
+    trySql().then((owned) => {
+        if (owned === true) {
+            resolve();
+            return null;
+        }
+        return db.getManagementInfo().then((res) => {
+            R.contains(storyName, userOwnedList(res, user.name, 'stories'))
+                ? resolve()
+                : reject(['errors-organizer-is-not-an-owner', [storyName]]);
+        });
     }).catch(reject);
 }));
 const isCharacterOwner = R.curry((property, args, user, db) => new Promise((resolve, reject) => {
     const character = args[property];
-    db.getManagementInfo().then((res) => {
-        R.contains(character, userOwnedList(res, user.name, 'characters'))
-            ? resolve()
-            : reject(['errors-organizer-is-not-an-owner', [character]]);
+    const trySql = () => {
+        if (pgBoot.storageMode() !== 'postgres' || !character) {
+            return Promise.resolve(null);
+        }
+        return pgBoot.ownsEntity(user.name, 'character', character);
+    };
+    trySql().then((owned) => {
+        if (owned === true) {
+            resolve();
+            return null;
+        }
+        return db.getManagementInfo().then((res) => {
+            R.contains(character, userOwnedList(res, user.name, 'characters'))
+                ? resolve()
+                : reject(['errors-organizer-is-not-an-owner', [character]]);
+        });
     }).catch(reject);
 }));
 
