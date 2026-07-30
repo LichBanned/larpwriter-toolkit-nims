@@ -75,8 +75,8 @@ async function initDatabase() {
         const serverAdminName = process.env.NIMS_SERVER_ADMIN || config.get('inits:adminLogin');
         if (serverAdminName) {
             try {
-                const { setAccountServerAdmin } = require('../../nims-dbms/pg/projectsApi');
-                const { withClient } = require('../../nims-dbms/pg/storage');
+                const { setAccountServerAdmin } = require('../nims-dbms/pg/projectsApi');
+                const { withClient } = require('../nims-dbms/pg/storage');
                 await withClient((client) => setAccountServerAdmin(client, serverAdminName, true));
                 log.info(`server-admin ensured for ${serverAdminName}`);
             } catch (err) {
