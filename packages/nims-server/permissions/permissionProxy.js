@@ -103,6 +103,15 @@ const canPlayerCreateChar = (args, user, db) => new Promise((resolve, reject) =>
         res.allowCharacterCreation ? resolve() : reject(['errors-forbidden-to-create-char'])
     )).catch(reject);
 });
+const canViewRoleGrid = (args, user, db) => userIsLogged(args, user).then(() => {
+    if (!user || user.role !== 'player') return undefined;
+    return db.getPlayersOptions().then((res) => {
+        if (res && res.allowRoleGridView === false) {
+            return Promise.reject(['errors-forbidden']);
+        }
+        return undefined;
+    });
+});
 const checkEditorMode = (args, user, db) => new Promise((resolve, reject) => {
     if (user && user.isServerAdmin) {
         resolve();
@@ -420,7 +429,7 @@ const apiInfo = {
         updateDefaultValue: organizerIsAdminCheck,
     },
     profileViewAPI: {
-        getRoleGridInfo: roleIsOrganizerCheck,
+        getRoleGridInfo: canViewRoleGrid,
         getCharactersSummary: roleIsOrganizerCheck,
         getExtendedProfileBindings: roleIsOrganizerCheck,
         getProfileFilterInfo: roleIsOrganizerCheck,
@@ -520,7 +529,7 @@ const apiInfo = {
         getResolvedPlayerProfileName: canResolvePlayerProfileName,
         getPlayerProfileInfo: userIsLogged,
         getWelcomeText: userIsLogged,
-        getPlayersOptions: roleIsOrganizerCheck,
+        getPlayersOptions: userIsLoggedOnlyCheck,
         setPlayerOption: organizerIsAdminCheck,
         setWelcomeText: organizerIsAdminCheck,
         createCharacterByPlayer: canPlayerCreateCharCheck,

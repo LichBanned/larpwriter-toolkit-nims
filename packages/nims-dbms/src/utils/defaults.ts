@@ -54,6 +54,7 @@ export function ensureDatabaseDefaults(database: Database): Database {
     mgmt.PlayersOptions = {
       allowPlayerCreation: true,
       allowCharacterCreation: false,
+      allowRoleGridView: true,
     };
   } else {
     if (typeof mgmt.PlayersOptions.allowPlayerCreation !== 'boolean') {
@@ -61,6 +62,9 @@ export function ensureDatabaseDefaults(database: Database): Database {
     }
     if (typeof mgmt.PlayersOptions.allowCharacterCreation !== 'boolean') {
       mgmt.PlayersOptions.allowCharacterCreation = false;
+    }
+    if (typeof mgmt.PlayersOptions.allowRoleGridView !== 'boolean') {
+      mgmt.PlayersOptions.allowRoleGridView = true;
     }
   }
   if (typeof mgmt.WelcomeText !== 'string') {

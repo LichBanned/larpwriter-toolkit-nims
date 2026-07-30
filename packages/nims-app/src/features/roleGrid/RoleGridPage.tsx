@@ -134,13 +134,13 @@ function collectGroupKeys(nodes: TreeNode[]): string[] {
 }
 
 function CharacterList({
-  rows, charFields, playerFields,
+  rows, charFields, playerFields, showOrganizerLinks,
 }: {
   rows: ProfileRow[];
   charFields: ProfileItem[];
   playerFields: ProfileItem[];
+  showOrganizerLinks: boolean;
 }) {
-  // Characters start collapsed — only names visible until opened
   return (
     <Accordion multiple defaultValue={[]}>
       {rows.map((row) => (
@@ -155,24 +155,26 @@ function CharacterList({
           </Accordion.Control>
           <Accordion.Panel>
             <Stack gap="sm">
-              <Group gap="md">
-                <Anchor
-                  component={Link}
-                  to={`/characters?select=${encodeURIComponent(row.characterName)}`}
-                  size="sm"
-                >
-                  Открыть персонажа
-                </Anchor>
-                {row.playerName && (
+              {showOrganizerLinks && (
+                <Group gap="md">
                   <Anchor
                     component={Link}
-                    to={`/players?select=${encodeURIComponent(row.playerName)}`}
+                    to={`/characters?select=${encodeURIComponent(row.characterName)}`}
                     size="sm"
                   >
-                    Открыть игрока
+                    Открыть персонажа
                   </Anchor>
-                )}
-              </Group>
+                  {row.playerName && (
+                    <Anchor
+                      component={Link}
+                      to={`/players?select=${encodeURIComponent(row.playerName)}`}
+                      size="sm"
+                    >
+                      Открыть игрока
+                    </Anchor>
+                  )}
+                </Group>
+              )}
               <ProfileMini title="Персонаж" data={row.character} fields={charFields} />
               {row.player && (
                 <ProfileMini title="Игрок" data={row.player} fields={playerFields} />
@@ -186,13 +188,13 @@ function CharacterList({
 }
 
 function TreeView({
-  nodes, charFields, playerFields,
+  nodes, charFields, playerFields, showOrganizerLinks,
 }: {
   nodes: TreeNode[];
   charFields: ProfileItem[];
   playerFields: ProfileItem[];
+  showOrganizerLinks: boolean;
 }) {
-  // Grouping levels start expanded
   const openGroups = collectGroupKeys(nodes);
 
   return (
@@ -209,9 +211,19 @@ function TreeView({
           </Accordion.Control>
           <Accordion.Panel>
             {node.children && node.children.length > 0 ? (
-              <TreeView nodes={node.children} charFields={charFields} playerFields={playerFields} />
+              <TreeView
+                nodes={node.children}
+                charFields={charFields}
+                playerFields={playerFields}
+                showOrganizerLinks={showOrganizerLinks}
+              />
             ) : (
-              <CharacterList rows={node.rows} charFields={charFields} playerFields={playerFields} />
+              <CharacterList
+                rows={node.rows}
+                charFields={charFields}
+                playerFields={playerFields}
+                showOrganizerLinks={showOrganizerLinks}
+              />
             )}
           </Accordion.Panel>
         </Accordion.Item>
@@ -220,17 +232,25 @@ function TreeView({
   );
 }
 
-function RoleGridPage() {
+export type RoleGridPageProps = {
+  /** Hide organizer deep-links (player cabinet). */
+  playerMode?: boolean;
+};
+
+function RoleGridPage({ playerMode = false }: RoleGridPageProps) {
   const { t } = useTranslation();
-  const { api } = useRootStore();
+  const { api, auth } = useRootStore();
   const isMobile = useIsMobile();
+  const showOrganizerLinks = !playerMode && auth.user?.role !== 'player';
   const [loading, setLoading] = useState(true);
   const [info, setInfo] = useState<RoleGridInfo | null>(null);
+  const [forbidden, setForbidden] = useState(false);
   const [activeFields, setActiveFields] = useState<string[]>([]);
   const [fieldOrder, setFieldOrder] = useState<string[]>([]);
 
   useEffect(() => {
     setLoading(true);
+    setForbidden(false);
     api.get<RoleGridInfo>('getRoleGridInfo')
       .then((data) => {
         setInfo(data);
@@ -240,8 +260,12 @@ function RoleGridPage() {
           .sort((a, b) => a.localeCompare(b));
         setFieldOrder(enums);
       })
+      .catch(() => {
+        setInfo(null);
+        setForbidden(true);
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [api]);
 
   const checkboxFields = useMemo(
     () => (info?.characterProfileStructure || []).filter((f) => f.type === 'checkbox').map((f) => f.name),
@@ -282,13 +306,27 @@ function RoleGridPage() {
     return <Center h={200}><Loader /></Center>;
   }
 
+  if (forbidden) {
+    return (
+      <Stack gap="lg">
+        <Title order={2}>{t('roleGrid.title')}</Title>
+        <EmptyState
+          title="Сетка ролей недоступна"
+          description="Мастер отключил просмотр сетки ролей для игроков."
+        />
+      </Stack>
+    );
+  }
+
   if (!info || info.profileData.length === 0) {
     return (
       <Stack gap="lg">
         <Title order={2}>{t('roleGrid.title')}</Title>
         <EmptyState
           title="Нет персонажей"
-          description="Создайте персонажей и поля профиля (enum/checkbox) — ими строится сетка."
+          description={playerMode
+            ? 'Пока нет персонажей для отображения в сетке.'
+            : 'Создайте персонажей и поля профиля (enum/checkbox) — ими строится сетка.'}
         />
       </Stack>
     );
@@ -300,7 +338,9 @@ function RoleGridPage() {
         <Title order={2}>{t('roleGrid.title')}</Title>
         <EmptyState
           title="Нет полей для группировки"
-          description="Добавьте enum или checkbox в структуре профиля персонажа (и отметьте «В сетке ролей»)."
+          description={playerMode
+            ? 'Мастер ещё не настроил поля профиля для сетки ролей.'
+            : 'Добавьте enum или checkbox в структуре профиля персонажа (и отметьте «В сетке ролей»).'}
         />
       </Stack>
     );
@@ -350,6 +390,7 @@ function RoleGridPage() {
             nodes={tree}
             charFields={info.characterProfileStructure}
             playerFields={info.playerProfileStructure}
+            showOrganizerLinks={showOrganizerLinks}
           />
         </Card>
       </Group>

@@ -86,6 +86,8 @@ export interface Group {
 export interface PlayersOptions {
   allowPlayerCreation: boolean;
   allowCharacterCreation: boolean;
+  /** Players may open the role grid (read-only). Default true when unset. */
+  allowRoleGridView?: boolean;
 }
 
 export interface ManagementInfo {

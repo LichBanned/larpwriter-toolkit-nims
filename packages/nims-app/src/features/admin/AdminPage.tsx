@@ -252,6 +252,20 @@ function AdminPage() {
     }
   };
 
+  const handleToggleRoleGrid = async (checked: boolean) => {
+    try {
+      await api.call('setPlayerOption', { name: 'allowRoleGridView', value: checked });
+      await loadMgmt();
+      notifications.show({
+        title: 'Готово',
+        message: checked ? 'Игроки видят сетку ролей' : 'Сетка ролей скрыта от игроков',
+        color: 'green',
+      });
+    } catch (e: any) {
+      notifications.show({ title: 'Ошибка', message: e.message, color: 'red' });
+    }
+  };
+
   const handleRemovePlayer = async (name: string) => {
     if (!confirm(`Удалить логин игрока «${name}»? Профиль игрока сохранится.`)) return;
     try {
@@ -535,12 +549,20 @@ function AdminPage() {
           <Stack gap="md">
             {canAdmin && (
               <Card shadow="sm" padding="md" withBorder>
-                <Switch
-                  label="Разрешить саморегистрацию игроков"
-                  description="На экране входа появится форма регистрации (логин + профиль + анкета)."
-                  checked={mgmt?.PlayersOptions?.allowPlayerCreation !== false}
-                  onChange={(e) => handleToggleSignup(e.currentTarget.checked)}
-                />
+                <Stack gap="md">
+                  <Switch
+                    label="Разрешить саморегистрацию игроков"
+                    description="На экране входа появится форма регистрации (логин + профиль + анкета)."
+                    checked={mgmt?.PlayersOptions?.allowPlayerCreation !== false}
+                    onChange={(e) => handleToggleSignup(e.currentTarget.checked)}
+                  />
+                  <Switch
+                    label="Игроки видят сетку ролей"
+                    description="В кабинете игрока появится пункт «Сетка ролей» (только просмотр)."
+                    checked={mgmt?.PlayersOptions?.allowRoleGridView !== false}
+                    onChange={(e) => handleToggleRoleGrid(e.currentTarget.checked)}
+                  />
+                </Stack>
               </Card>
             )}
 

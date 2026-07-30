@@ -20,7 +20,11 @@ export interface PlayerInfo {
   profileName?: string;
 }
 
-const PLAYER_OPTION_TYPES = ['allowPlayerCreation', 'allowCharacterCreation'] as const;
+const PLAYER_OPTION_TYPES = [
+  'allowPlayerCreation',
+  'allowCharacterCreation',
+  'allowRoleGridView',
+] as const;
 
 export function isProfileFieldEmpty(value: unknown, itemType: string): boolean {
   if (value === null || value === undefined) return true;
@@ -311,6 +315,7 @@ export class UsersEngine {
     return {
       allowPlayerCreation: opts?.allowPlayerCreation !== false,
       allowCharacterCreation: opts?.allowCharacterCreation === true,
+      allowRoleGridView: opts?.allowRoleGridView !== false,
     };
   }
 
@@ -324,6 +329,7 @@ export class UsersEngine {
       this.mgmt.PlayersOptions = {
         allowPlayerCreation: true,
         allowCharacterCreation: false,
+        allowRoleGridView: true,
       };
     }
     (this.mgmt.PlayersOptions as PlayersOptions)[name as keyof PlayersOptions] = value;

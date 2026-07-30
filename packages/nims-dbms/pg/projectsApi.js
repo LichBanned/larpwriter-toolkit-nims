@@ -92,7 +92,7 @@ async function createProject(client, { slug, name, description, creatorUsername 
         editors: [],
         adaptationRights: 'ByStory',
         WelcomeText: '',
-        PlayersOptions: { allowPlayerCreation: false, allowCharacterCreation: false },
+        PlayersOptions: { allowPlayerCreation: false, allowCharacterCreation: false, allowRoleGridView: true },
       },
       Settings: {},
       Gears: { nodes: [], edges: [], settings: {} },

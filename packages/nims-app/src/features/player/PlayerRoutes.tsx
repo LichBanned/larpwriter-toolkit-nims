@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { Center, Loader } from '@mantine/core';
 
 const PlayerCabinet = lazy(() => import('./PlayerCabinetPage'));
+const RoleGridPage = lazy(() => import('@/features/roleGrid/RoleGridPage'));
 
 function PageLoader() {
   return (
@@ -19,6 +20,7 @@ export function PlayerRoutes() {
         <Route path="/" element={<PlayerCabinet />} />
         <Route path="/questionnaire" element={<PlayerCabinet />} />
         <Route path="/character" element={<PlayerCabinet />} />
+        <Route path="/role-grid" element={<RoleGridPage playerMode />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>

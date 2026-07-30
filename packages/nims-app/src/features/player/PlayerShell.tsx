@@ -23,6 +23,7 @@ const playerNav = [
   { path: '/', label: 'О вас', icon: '🧑', always: true },
   { path: '/questionnaire', label: 'Анкета', icon: '📝', always: true },
   { path: '/character', label: 'Персонаж', icon: '🎭', always: false },
+  { path: '/role-grid', label: 'Сетка ролей', icon: '▦', always: true, option: 'roleGrid' },
 ] as const;
 
 export const PlayerShell = observer(function PlayerShell({ children }: { children: React.ReactNode }) {
@@ -31,6 +32,7 @@ export const PlayerShell = observer(function PlayerShell({ children }: { childre
   const { auth, api, projects } = useRootStore();
   const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure();
   const [hasCharacter, setHasCharacter] = useState(false);
+  const [roleGridAllowed, setRoleGridAllowed] = useState(true);
 
   useEffect(() => {
     void projects.load(false);
@@ -47,6 +49,18 @@ export const PlayerShell = observer(function PlayerShell({ children }: { childre
       });
     return () => { cancelled = true; };
   }, [api, location.pathname]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get<{ allowRoleGridView?: boolean }>('getPlayersOptions')
+      .then((opts) => {
+        if (!cancelled) setRoleGridAllowed(opts?.allowRoleGridView !== false);
+      })
+      .catch(() => {
+        if (!cancelled) setRoleGridAllowed(false);
+      });
+    return () => { cancelled = true; };
+  }, [api]);
 
   useEffect(() => {
     closeMobile();
@@ -114,6 +128,9 @@ export const PlayerShell = observer(function PlayerShell({ children }: { childre
       <MantineAppShell.Navbar p="xs">
         <MantineAppShell.Section grow>
           {playerNav.map((item) => {
+            if ('option' in item && item.option === 'roleGrid' && !roleGridAllowed) {
+              return null;
+            }
             const disabled = !item.always && !hasCharacter;
             const link = (
               <NavLink
