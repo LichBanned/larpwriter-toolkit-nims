@@ -36,8 +36,10 @@ async function initDatabase() {
     log.info(`NIMS_STORAGE=${mode}`);
 
     let seedDb = null;
+    let loadedFromPg = false;
     if (mode === 'postgres') {
         seedDb = await pgBoot.loadBootDatabase();
+        loadedFromPg = seedDb != null;
     }
     if (seedDb == null) {
         seedDb = loader.loadLastDatabase();
@@ -47,9 +49,12 @@ async function initDatabase() {
         seedDb = emptyBase.data;
     }
 
+    // Do not createAdmin on empty engine before setDatabase when loading Postgres:
+    // preserveManagementInfo merge would keep the fresh env hash and wipe real passwords
+    // on the boot-time persistDatabase below.
     const db = createServerDbms(
         emptyDatabase,
-        shouldEnsureAdmin
+        (!loadedFromPg && shouldEnsureAdmin)
             ? {
                 adminLogin: config.get('inits:adminLogin'),
                 adminPass: config.get('inits:adminPass'),
@@ -65,7 +70,11 @@ async function initDatabase() {
     dbms.db = pgBoot.wrapDbForPersist(db, getSnapshot);
     dbms.preparedDb = pgBoot.wrapDbForPersist(preparedDb, getSnapshot);
 
-    await db.setDatabase({ database: seedDb, preserveManagementInfo: true });
+    await db.setDatabase({
+        database: seedDb,
+        // Authoritative project document from Postgres must replace empty engine MI as-is.
+        preserveManagementInfo: !loadedFromPg,
+    });
 
     if (shouldEnsureAdmin) {
         await db.ensureAdminExists(config.get('inits:adminLogin'), config.get('inits:adminPass'));
@@ -97,9 +106,12 @@ async function initDatabase() {
         log.error(err);
     }
 
-    if (mode === 'postgres') {
+    // Persist only when we bootstrapped a missing project — never rewrite passwords on every start.
+    if (mode === 'postgres' && !loadedFromPg) {
         await pgBoot.persistDatabase(await db.getDatabase());
-        log.info(`PostgreSQL project slug=${pgBoot.projectSlug()} persisted`);
+        log.info(`PostgreSQL project slug=${pgBoot.projectSlug()} persisted (initial)`);
+    } else if (mode === 'postgres') {
+        log.info(`PostgreSQL project slug=${pgBoot.projectSlug()} loaded (skip boot persist)`);
     }
 
     require('./autosave')(dbms.db);

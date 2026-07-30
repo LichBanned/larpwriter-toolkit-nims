@@ -306,17 +306,31 @@ async function saveDatabaseToProject(client, database, slug, opts = {}) {
     const editors = new Set([...(mi.editors || []), mi.editor].filter(Boolean));
 
     const ensureAccount = async (username, info, kind) => {
-      const found = await client.query('SELECT id FROM accounts WHERE username = $1', [username]);
+      const found = await client.query(
+        'SELECT id, salt, password_hash, kind FROM accounts WHERE username = $1',
+        [username],
+      );
       let accountId;
       if (found.rows.length) {
         accountId = found.rows[0].id;
-        if (info && (info.salt || info.hashedPassword)) {
-          await client.query(
-            `UPDATE accounts SET salt = COALESCE($2, salt), password_hash = COALESCE($3, password_hash),
-              kind = $4, updated_at = now() WHERE id = $1`,
-            [accountId, info.salt || null, info.hashedPassword || null, kind],
-          );
-        }
+        // Never overwrite existing credentials from per-project ManagementInfo:
+        // write-through of project A must not clobber the login hash used by project B.
+        const nextKind = (found.rows[0].kind === 'both' || kind === 'both'
+          || (found.rows[0].kind === 'organizer' && kind === 'player')
+          || (found.rows[0].kind === 'player' && kind === 'organizer'))
+          ? 'both'
+          : (kind || found.rows[0].kind);
+        const fillSalt = !found.rows[0].salt && info?.salt ? info.salt : null;
+        const fillHash = !found.rows[0].password_hash && info?.hashedPassword ? info.hashedPassword : null;
+        await client.query(
+          `UPDATE accounts SET
+             salt = COALESCE($2, salt),
+             password_hash = COALESCE($3, password_hash),
+             kind = $4,
+             updated_at = now()
+           WHERE id = $1`,
+          [accountId, fillSalt, fillHash, nextKind],
+        );
       } else {
         const ins = await client.query(
           `INSERT INTO accounts (username, salt, password_hash, kind) VALUES ($1,$2,$3,$4) RETURNING id`,
