@@ -28,7 +28,7 @@ export class AuthStore {
   lastError: string | null = null;
 
   constructor(private root: RootStore) {
-    makeAutoObservable(this, {}, { autoBind: true });
+    makeAutoObservable(this, { root: false }, { autoBind: true });
   }
 
   get isLoggedIn() {
@@ -208,7 +208,8 @@ export class AuthStore {
     } finally {
       runInAction(() => { this.user = null; });
       this.root.permissions.clear();
-      this.root.projects.projects = [];
+      const list = this.root.projects?.projects;
+      if (Array.isArray(list)) list.splice(0, list.length);
     }
   }
 

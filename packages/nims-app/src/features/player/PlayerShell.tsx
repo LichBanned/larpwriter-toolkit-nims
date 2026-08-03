@@ -84,13 +84,13 @@ export const PlayerShell = observer(function PlayerShell({ children }: { childre
     >
       <MantineAppShell.Header>
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
-          <Group gap="sm" wrap="nowrap">
+          <Group gap="sm" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
             <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" aria-label="Меню" />
-            <Text fw={700} size="lg">NIMS</Text>
+            <Text fw={700} size="lg" style={{ flexShrink: 0 }}>NIMS</Text>
             {auth.user?.projectSlug && (
               <Select
                 size="xs"
-                w={140}
+                aria-label="Проект"
                 allowDeselect={false}
                 value={auth.user.projectSlug}
                 data={projects.projects
@@ -101,10 +101,17 @@ export const PlayerShell = observer(function PlayerShell({ children }: { childre
                     projects.beginSwitch(slug);
                   }
                 }}
-                visibleFrom="xs"
+                styles={{
+                  root: {
+                    flex: '1 1 auto',
+                    minWidth: 110,
+                    maxWidth: 180,
+                  },
+                  input: { minHeight: 36 },
+                }}
               />
             )}
-            <Text size="sm" c="dimmed" visibleFrom="xs">Кабинет игрока</Text>
+            <Text size="sm" c="dimmed" visibleFrom="sm">Кабинет игрока</Text>
           </Group>
           <Group gap="xs" wrap="nowrap">
             {auth.user && (

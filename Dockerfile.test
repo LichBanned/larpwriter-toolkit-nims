@@ -1,0 +1,68 @@
+# syntax=docker/dockerfile:1
+# Test harness image for docker-compose.test.yml (app + test runner).
+
+FROM node:20-bookworm
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json* lerna.json ./
+COPY packages/nims-dbms packages/nims-dbms
+COPY packages/nims-dbms-core packages/nims-dbms-core
+COPY packages/nims-resources packages/nims-resources
+COPY packages/nims-server packages/nims-server
+COPY packages/nims-app packages/nims-app
+COPY docker docker
+
+# Point private monorepo deps at local folders (not npm registry).
+RUN node <<'NODE'
+const fs = require('fs');
+const path = require('path');
+const map = {
+  'nims-dbms': 'file:../nims-dbms',
+  'nims-dbms-core': 'file:../nims-dbms-core',
+  'nims-resources': 'file:../nims-resources',
+  'nims-server': 'file:../nims-server',
+  'nims-app': 'file:../nims-app',
+};
+for (const dir of Object.keys(map).map((n) => n)) {
+  const pj = path.join('packages', dir, 'package.json');
+  if (!fs.existsSync(pj)) continue;
+  const j = JSON.parse(fs.readFileSync(pj, 'utf8'));
+  for (const field of ['dependencies', 'devDependencies']) {
+    if (!j[field]) continue;
+    for (const name of Object.keys(j[field])) {
+      if (map[name]) j[field][name] = map[name];
+    }
+  }
+  fs.writeFileSync(pj, JSON.stringify(j, null, 2) + '\n');
+}
+NODE
+
+RUN npm install --no-audit --no-fund \
+  && cd packages/nims-dbms-core && npm install --no-audit --no-fund \
+  && cd /app/packages/nims-resources && npm install --no-audit --no-fund \
+  && cd /app/packages/nims-dbms && npm install --no-audit --no-fund \
+  && cd /app/packages/nims-server && npm install --no-audit --no-fund \
+  && cd /app/packages/nims-app && npm install --no-audit --no-fund \
+  && cd /app/packages/nims-app && npm install -D vitest@2.1.9 jsdom@25.0.1 @vitest/coverage-v8@2.1.9 --no-audit --no-fund \
+  && cd /app && npm install c8@10.1.3 --no-save --no-audit --no-fund \
+  && mkdir -p node_modules \
+  && ln -sfn ../packages/nims-dbms node_modules/nims-dbms \
+  && ln -sfn ../packages/nims-dbms-core node_modules/nims-dbms-core \
+  && ln -sfn ../packages/nims-resources node_modules/nims-resources \
+  && ln -sfn ../packages/nims-server node_modules/nims-server
+
+RUN cd /app/packages/nims-dbms && npx tsc \
+  && mkdir -p /app/packages/nims-app/dist /app/packages/nims-server/data /app/coverage \
+  && printf '%s\n' '<!doctype html><html><body>nims-test</body></html>' > /app/packages/nims-app/dist/index.html
+
+COPY scripts scripts
+RUN chmod +x /app/scripts/run-docker-tests.sh /app/scripts/wait-for-http.sh \
+    /app/scripts/check-coverage-thresholds.js /app/docker/test-app-entrypoint.sh
+
+ENV NODE_ENV=test
+WORKDIR /app

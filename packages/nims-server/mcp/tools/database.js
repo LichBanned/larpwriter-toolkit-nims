@@ -100,9 +100,9 @@ const briefingExportParams = {
 function registerReadTools(server, db, user) {
     server.tool(
         'export_database',
-        'Выгрузить полную базу NIMS (JSON). По умолчанию без ManagementInfo — только игровые данные.',
+        'Выгрузить базу NIMS (JSON). Без паролей. По умолчанию без ManagementInfo — только игровые данные.',
         {
-            includeManagementInfo: z.boolean().optional().describe('Включить ManagementInfo (пользователи, права). По умолчанию false'),
+            includeManagementInfo: z.boolean().optional().describe('Включить ManagementInfo (роли/ownership без паролей). По умолчанию false'),
         },
         async ({ includeManagementInfo }) => {
             try {
@@ -168,10 +168,10 @@ function registerReadTools(server, db, user) {
 function registerWriteTools(server, db, user) {
     server.tool(
         'import_database',
-        'Загрузить полную базу NIMS из JSON. Требуются права admin. По умолчанию сохраняет текущий ManagementInfo (пользователи и права).',
+        'Загрузить полную базу NIMS из JSON. Требуются права admin. Пользователи и пароли не изменяются (сохраняется текущий ManagementInfo).',
         {
             database: z.record(z.string(), z.unknown()).describe('Объект базы NIMS (как из export_database)'),
-            preserveManagementInfo: z.boolean().optional().describe('Сохранить ManagementInfo текущего сервера (по умолчанию true)'),
+            preserveManagementInfo: z.boolean().optional().describe('Сохранить пользователей текущего сервера (по умолчанию true; false — всё равно без паролей из файла)'),
         },
         async ({ database, preserveManagementInfo }) => {
             try {

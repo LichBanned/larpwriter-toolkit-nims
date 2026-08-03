@@ -21,7 +21,7 @@ export class PermissionsStore {
   usersInfo: Record<string, MgmtUserInfo> = {};
 
   constructor(private root: RootStore) {
-    makeAutoObservable(this, {}, { autoBind: true });
+    makeAutoObservable(this, { root: false }, { autoBind: true });
   }
 
   get isOrganizer() {

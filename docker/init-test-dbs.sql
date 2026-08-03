@@ -1,0 +1,2 @@
+CREATE DATABASE nims_unit;
+GRANT ALL PRIVILEGES ON DATABASE nims_unit TO nims;

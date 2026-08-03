@@ -185,7 +185,7 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
     >
       <MantineAppShell.Header>
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
-          <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+          <Group gap="sm" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
             <Burger
               opened={mobileOpened}
               onClick={toggleMobile}
@@ -212,7 +212,7 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
             {auth.user?.projectSlug && (
               <Select
                 size="xs"
-                w={160}
+                aria-label="Проект"
                 allowDeselect={false}
                 value={auth.user.projectSlug}
                 data={projects.projects
@@ -223,10 +223,17 @@ export const AppShell = observer(function AppShell({ children }: { children: Rea
                     projects.beginSwitch(slug);
                   }
                 }}
-                visibleFrom="sm"
+                styles={{
+                  root: {
+                    flex: '1 1 auto',
+                    minWidth: isMobile ? 110 : 160,
+                    maxWidth: isMobile ? 180 : 200,
+                  },
+                  input: { minHeight: 36 },
+                }}
               />
             )}
-            <Text size="sm" c="dimmed" truncate style={{ minWidth: 0 }}>
+            <Text size="sm" c="dimmed" truncate style={{ minWidth: 0 }} visibleFrom="sm">
               {pageTitle}
             </Text>
           </Group>

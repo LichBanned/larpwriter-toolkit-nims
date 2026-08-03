@@ -389,7 +389,10 @@ export class ProfilesEngine {
     const login = user?.name;
     if (!login) throw new Error('errors-user-is-not-logged');
 
-    const playersInfo = this.engine.database.ManagementInfo?.PlayersInfo || {};
+    const playersInfo = (this.engine.database.ManagementInfo?.PlayersInfo || {}) as Record<
+      string,
+      { name?: string; profileName?: string; salt?: string; hashedPassword?: string }
+    >;
     if (!playersInfo[login]) throw new Error('errors-user-is-not-found');
 
     // Membership/join may create PlayersInfo without profile sheets (other projects).

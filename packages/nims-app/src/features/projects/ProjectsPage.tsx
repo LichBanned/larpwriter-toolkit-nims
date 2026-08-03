@@ -1,11 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Stack, Title, Text, Button, Group, Paper, TextInput, FileButton, Alert, Badge, Loader,
-  PasswordInput,
+  PasswordInput, Table, Modal,
 } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { observer } from 'mobx-react-lite';
 import { useRootStore } from '@/stores';
+
+type AccountRow = {
+  username: string;
+  kind: string;
+  is_server_admin: boolean;
+  projects: string[];
+};
+
+function kindLabel(kind: string) {
+  if (kind === 'both') return 'орг+игрок';
+  if (kind === 'player') return 'игрок';
+  return 'организатор';
+}
 
 export const ProjectsPage = observer(function ProjectsPage() {
   const { projects, auth, api } = useRootStore();
@@ -13,13 +27,31 @@ export const ProjectsPage = observer(function ProjectsPage() {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saPass, setSaPass] = useState('');
-  const [saPass2, setSaPass2] = useState('');
-  const [saSaving, setSaSaving] = useState(false);
+  const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [passOpened, { open: openPass, close: closePass }] = useDisclosure(false);
+  const [passUser, setPassUser] = useState<string | null>(null);
+  const [passValue, setPassValue] = useState('');
+  const [passValue2, setPassValue2] = useState('');
+  const [passSaving, setPassSaving] = useState(false);
+
+  const loadAccounts = useCallback(async () => {
+    setAccountsLoading(true);
+    try {
+      const rows = await api.get<AccountRow[]>('listAccounts');
+      setAccounts(Array.isArray(rows) ? rows : []);
+    } catch (e: any) {
+      notifications.show({ message: e?.message || 'Не удалось загрузить аккаунты', color: 'red' });
+      setAccounts([]);
+    } finally {
+      setAccountsLoading(false);
+    }
+  }, [api]);
 
   useEffect(() => {
     void projects.load(false);
-  }, [projects]);
+    void loadAccounts();
+  }, [projects, loadAccounts]);
 
   if (!auth.isServerAdmin) {
     return <Alert color="red">Только server-admin</Alert>;
@@ -63,7 +95,7 @@ export const ProjectsPage = observer(function ProjectsPage() {
       const database = JSON.parse(text);
       await api.call('importProjectFromJson', { slug: importSlug.trim(), database });
       await projects.load(false);
-      notifications.show({ message: `Импорт в ${importSlug}`, color: 'green' });
+      notifications.show({ message: `Импорт контента в ${importSlug} (пользователи не изменялись)`, color: 'green' });
     } catch (e: any) {
       notifications.show({ message: e?.message || 'Ошибка импорта', color: 'red' });
     } finally {
@@ -71,22 +103,34 @@ export const ProjectsPage = observer(function ProjectsPage() {
     }
   }
 
-  async function changeServerAdminPassword() {
-    if (!saPass.trim()) return;
-    if (saPass !== saPass2) {
+  function openChangePassword(username: string) {
+    setPassUser(username);
+    setPassValue('');
+    setPassValue2('');
+    openPass();
+  }
+
+  async function confirmPasswordChange() {
+    if (!passUser || !passValue.trim()) return;
+    if (passValue !== passValue2) {
       notifications.show({ message: 'Пароли не совпадают', color: 'red' });
       return;
     }
-    setSaSaving(true);
+    setPassSaving(true);
     try {
-      await api.call('changeServerAdminPassword', { newPassword: saPass.trim() });
-      setSaPass('');
-      setSaPass2('');
-      notifications.show({ message: 'Пароль суперадмина обновлён', color: 'green' });
+      await api.call('changeAccountPassword', {
+        userName: passUser,
+        newPassword: passValue.trim(),
+      });
+      notifications.show({ message: `Пароль для «${passUser}» обновлён`, color: 'green' });
+      setPassUser(null);
+      setPassValue('');
+      setPassValue2('');
+      closePass();
     } catch (e: any) {
       notifications.show({ message: e?.message || 'Не удалось сменить пароль', color: 'red' });
     } finally {
-      setSaSaving(false);
+      setPassSaving(false);
     }
   }
 
@@ -98,34 +142,59 @@ export const ProjectsPage = observer(function ProjectsPage() {
 
       <Paper withBorder p="md" radius="md">
         <Stack gap="sm">
-          <Text fw={600}>Пароль суперадмина</Text>
-          <Text size="sm" c="dimmed">
-            Логин: <Text span fw={600}>{auth.user?.name}</Text>
-            . Меняется здесь, не в админке проекта.
-          </Text>
-          <Group grow align="flex-end">
-            <PasswordInput
-              label="Новый пароль"
-              value={saPass}
-              onChange={(e) => setSaPass(e.currentTarget.value)}
-              autoComplete="new-password"
-            />
-            <PasswordInput
-              label="Повтор"
-              value={saPass2}
-              onChange={(e) => setSaPass2(e.currentTarget.value)}
-              autoComplete="new-password"
-            />
-          </Group>
-          <Group>
-            <Button
-              loading={saSaving}
-              disabled={!saPass.trim() || saPass !== saPass2}
-              onClick={() => void changeServerAdminPassword()}
-            >
-              Сохранить пароль
+          <Group justify="space-between">
+            <div>
+              <Text fw={600}>Пароли аккаунтов</Text>
+              <Text size="sm" c="dimmed">
+                Смена паролей только здесь. Хранятся в таблице accounts, не в проектах.
+              </Text>
+            </div>
+            <Button variant="light" size="compact-sm" loading={accountsLoading} onClick={() => void loadAccounts()}>
+              Обновить
             </Button>
           </Group>
+          {accountsLoading && accounts.length === 0 ? (
+            <Loader size="sm" />
+          ) : accounts.length === 0 ? (
+            <Text c="dimmed" size="sm">Нет аккаунтов</Text>
+          ) : (
+            <Table striped highlightOnHover withTableBorder>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Логин</Table.Th>
+                  <Table.Th>Тип</Table.Th>
+                  <Table.Th>Проекты</Table.Th>
+                  <Table.Th />
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {accounts.map((a) => (
+                  <Table.Tr key={a.username}>
+                    <Table.Td>
+                      <Group gap="xs">
+                        <Text fw={a.username === auth.user?.name ? 600 : 400}>{a.username}</Text>
+                        {a.is_server_admin && <Badge size="xs" color="violet">суперадмин</Badge>}
+                        {a.username === auth.user?.name && <Badge size="xs" color="gray" variant="outline">вы</Badge>}
+                      </Group>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm">{kindLabel(a.kind)}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="xs" c="dimmed">
+                        {a.projects.length ? a.projects.join(', ') : '—'}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Button size="compact-xs" variant="subtle" onClick={() => openChangePassword(a.username)}>
+                        Пароль
+                      </Button>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          )}
         </Stack>
       </Paper>
 
@@ -173,6 +242,43 @@ export const ProjectsPage = observer(function ProjectsPage() {
           </Paper>
         ))}
       </Stack>
+
+      <Modal
+        opened={passOpened}
+        onClose={() => { closePass(); setPassUser(null); setPassValue(''); setPassValue2(''); }}
+        title={passUser ? `Новый пароль: ${passUser}` : 'Смена пароля'}
+      >
+        <Stack>
+          <PasswordInput
+            label="Новый пароль"
+            value={passValue}
+            onChange={(e) => setPassValue(e.currentTarget.value)}
+            autoFocus
+            autoComplete="new-password"
+          />
+          <PasswordInput
+            label="Повтор"
+            value={passValue2}
+            onChange={(e) => setPassValue2(e.currentTarget.value)}
+            autoComplete="new-password"
+          />
+          <Group justify="flex-end">
+            <Button
+              variant="subtle"
+              onClick={() => { closePass(); setPassUser(null); setPassValue(''); setPassValue2(''); }}
+            >
+              Отмена
+            </Button>
+            <Button
+              loading={passSaving}
+              disabled={!passValue.trim() || passValue !== passValue2}
+              onClick={() => void confirmPasswordChange()}
+            >
+              Сохранить
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   );
 });

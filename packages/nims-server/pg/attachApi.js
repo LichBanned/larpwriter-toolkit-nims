@@ -7,7 +7,8 @@
 const {
   withClient,
   setAccountPassword,
-  syncPasswordToAllProjectDocuments,
+  stripCredentialsFromManagementInfo,
+  stripCredentialsFromAllProjectDocuments,
 } = require('../../nims-dbms/pg/storage');
 const {
   listEntityRevisions,
@@ -258,13 +259,22 @@ function attachHistoryAndProjectsApi(rawDb, dbmsRef) {
       throw Object.assign(new Error('postgres-only'), { messageId: 'errors-forbidden' });
     }
     const slug = String(args.slug || '').trim();
-    const database = args.database;
-    if (!slug || !database || typeof database !== 'object') {
+    if (!slug || !args.database || typeof args.database !== 'object') {
       throw Object.assign(new Error('bad-args'), { messageId: 'errors-argument-is-incorrect' });
     }
+    // Content-only: never create/update accounts from the JSON dump.
+    const database = JSON.parse(JSON.stringify(args.database));
+    const mi = database.ManagementInfo || (database.ManagementInfo = {});
+    mi.UsersInfo = {};
+    mi.PlayersInfo = {};
+    mi.admins = [];
+    mi.editors = [];
+    mi.admin = '';
+    mi.editor = '';
+    stripCredentialsFromManagementInfo(mi);
+
     const { saveDatabaseToProject } = require('../../nims-dbms/pg/storage');
     const projectId = await withClient(async (client) => {
-      // ensure project row exists
       const existing = await client.query(`SELECT id FROM projects WHERE slug = $1`, [slug]);
       if (!existing.rows.length) {
         await createProject(client, {
@@ -274,7 +284,10 @@ function attachHistoryAndProjectsApi(rawDb, dbmsRef) {
           creatorUsername: user && user.name,
         });
       }
-      return saveDatabaseToProject(client, database, slug, { baselineRevision: true });
+      return saveDatabaseToProject(client, database, slug, {
+        baselineRevision: true,
+        syncAccounts: false,
+      });
     });
     return { ok: true, projectId, slug };
   };
@@ -299,26 +312,115 @@ function attachHistoryAndProjectsApi(rawDb, dbmsRef) {
     });
   };
 
-  const origChangeOrganizerPassword = rawDb.changeOrganizerPassword
-    && rawDb.changeOrganizerPassword.bind(rawDb);
-  if (origChangeOrganizerPassword) {
-    rawDb.changeOrganizerPassword = async function changeOrganizerPasswordGuarded(args = {}, user) {
-      const userName = String(args.userName || '').trim();
-      if (userName && pgBoot.storageMode() === 'postgres') {
-        const isSa = await withClient(async (client) => {
-          const r = await client.query(
-            `SELECT 1 FROM accounts WHERE username = $1 AND is_server_admin = true LIMIT 1`,
-            [userName],
-          );
-          return r.rows.length > 0;
+  rawDb.listAccounts = async function listAccountsApi() {
+    if (pgBoot.storageMode() !== 'postgres') {
+      const mi = rawDb.database && rawDb.database.ManagementInfo;
+      const saName = process.env.NIMS_SERVER_ADMIN || process.env.NIMS_ADMIN_LOGIN || 'admin';
+      const byName = new Map();
+      for (const username of Object.keys((mi && mi.UsersInfo) || {})) {
+        byName.set(username, {
+          username,
+          kind: 'organizer',
+          is_server_admin: username === saName,
+          projects: [],
         });
-        if (isSa) {
-          throw Object.assign(new Error('server-admin-password'), {
-            messageId: 'errors-forbidden',
-            message: 'Пароль суперадмина меняется в разделе «Проекты»',
+      }
+      for (const username of Object.keys((mi && mi.PlayersInfo) || {})) {
+        const prev = byName.get(username);
+        if (prev) {
+          prev.kind = 'both';
+        } else {
+          byName.set(username, {
+            username,
+            kind: 'player',
+            is_server_admin: false,
+            projects: [],
           });
         }
       }
+      return Array.from(byName.values()).sort((a, b) => a.username.localeCompare(b.username, 'ru'));
+    }
+    return withClient(async (client) => {
+      const r = await client.query(`
+        SELECT a.username,
+               a.kind,
+               a.is_server_admin,
+               COALESCE(
+                 array_agg(DISTINCT p.slug) FILTER (WHERE p.slug IS NOT NULL AND p.archived_at IS NULL),
+                 '{}'
+               ) AS projects
+        FROM accounts a
+        LEFT JOIN project_memberships m ON m.account_id = a.id
+        LEFT JOIN projects p ON p.id = m.project_id
+        GROUP BY a.id
+        ORDER BY a.username
+      `);
+      return r.rows.map((row) => ({
+        username: row.username,
+        kind: row.kind || 'organizer',
+        is_server_admin: !!row.is_server_admin,
+        projects: Array.isArray(row.projects) ? row.projects.filter(Boolean) : [],
+      }));
+    });
+  };
+
+  function clearPasswordFromInMemoryMi(userName) {
+    const mi = rawDb.database && rawDb.database.ManagementInfo;
+    if (!mi) return;
+    if (mi.UsersInfo && mi.UsersInfo[userName]) {
+      delete mi.UsersInfo[userName].salt;
+      delete mi.UsersInfo[userName].hashedPassword;
+    }
+    if (mi.PlayersInfo && mi.PlayersInfo[userName]) {
+      delete mi.PlayersInfo[userName].salt;
+      delete mi.PlayersInfo[userName].hashedPassword;
+    }
+  }
+
+  async function setPasswordInAccounts(userName, newPassword, preferredKind) {
+    const crypto = require('crypto');
+    const saltHex = crypto.randomBytes(16).toString('hex');
+    const hashedPassword = crypto.scryptSync(newPassword, saltHex, 64).toString('hex');
+    const salt = `scrypt$${saltHex}`;
+
+    if (pgBoot.storageMode() === 'postgres') {
+      await withClient(async (client) => {
+        const check = await client.query(
+          `SELECT kind FROM accounts WHERE username = $1 LIMIT 1`,
+          [userName],
+        );
+        if (!check.rows.length) {
+          throw Object.assign(new Error('user-not-found'), { messageId: 'errors-user-is-not-found' });
+        }
+        const kind = preferredKind || check.rows[0].kind || 'organizer';
+        await setAccountPassword(client, userName, salt, hashedPassword, kind);
+      });
+      clearPasswordFromInMemoryMi(userName);
+      return { ok: true, username: userName };
+    }
+
+    const mi = rawDb.database && rawDb.database.ManagementInfo;
+    const isOrg = mi && mi.UsersInfo && mi.UsersInfo[userName];
+    const isPlayer = mi && mi.PlayersInfo && mi.PlayersInfo[userName];
+    if (!isOrg && !isPlayer) {
+      throw Object.assign(new Error('user-not-found'), { messageId: 'errors-user-is-not-found' });
+    }
+    if (isOrg && origChangeOrganizerPassword) {
+      await origChangeOrganizerPassword({ userName, newPassword });
+      return { ok: true, username: userName };
+    }
+    if (isPlayer && origChangePlayerPassword) {
+      await origChangePlayerPassword({ userName, newPassword });
+      return { ok: true, username: userName };
+    }
+    throw Object.assign(new Error('user-not-found'), { messageId: 'errors-user-is-not-found' });
+  }
+
+  const origChangeOrganizerPassword = rawDb.changeOrganizerPassword
+    && rawDb.changeOrganizerPassword.bind(rawDb);
+  if (origChangeOrganizerPassword) {
+    rawDb.changeOrganizerPassword = async function changeOrganizerPasswordSynced(args = {}, user) {
+      const userName = String(args.userName || '').trim();
       const result = await origChangeOrganizerPassword(args, user);
       if (userName && pgBoot.storageMode() === 'postgres') {
         const info = rawDb.database
@@ -328,8 +430,8 @@ function attachHistoryAndProjectsApi(rawDb, dbmsRef) {
         if (info && info.salt && info.hashedPassword) {
           await withClient(async (client) => {
             await setAccountPassword(client, userName, info.salt, info.hashedPassword, 'organizer');
-            await syncPasswordToAllProjectDocuments(client, userName, info.salt, info.hashedPassword);
           });
+          clearPasswordFromInMemoryMi(userName);
         }
       }
       return result;
@@ -350,55 +452,73 @@ function attachHistoryAndProjectsApi(rawDb, dbmsRef) {
         if (info && info.salt && info.hashedPassword) {
           await withClient(async (client) => {
             await setAccountPassword(client, userName, info.salt, info.hashedPassword, 'player');
-            await syncPasswordToAllProjectDocuments(client, userName, info.salt, info.hashedPassword);
           });
+          clearPasswordFromInMemoryMi(userName);
         }
       }
       return result;
     };
   }
 
+  const origCreateOrganizer = rawDb.createOrganizer && rawDb.createOrganizer.bind(rawDb);
+  if (origCreateOrganizer) {
+    rawDb.createOrganizer = async function createOrganizerAccounts(args = {}, user) {
+      const result = await origCreateOrganizer(args, user);
+      const userName = String((args && (args.name || args.userName)) || '').trim();
+      if (userName && pgBoot.storageMode() === 'postgres') {
+        const info = rawDb.database
+          && rawDb.database.ManagementInfo
+          && rawDb.database.ManagementInfo.UsersInfo
+          && rawDb.database.ManagementInfo.UsersInfo[userName];
+        if (info && info.salt && info.hashedPassword) {
+          await withClient(async (client) => {
+            await setAccountPassword(client, userName, info.salt, info.hashedPassword, 'organizer');
+          });
+          clearPasswordFromInMemoryMi(userName);
+        }
+      }
+      return result;
+    };
+  }
+
+  const origCreatePlayer = rawDb.createPlayer && rawDb.createPlayer.bind(rawDb);
+  if (origCreatePlayer) {
+    rawDb.createPlayer = async function createPlayerAccounts(args = {}, user) {
+      const result = await origCreatePlayer(args, user);
+      const userName = String((args && (args.userName || args.name)) || '').trim();
+      if (userName && pgBoot.storageMode() === 'postgres') {
+        const info = rawDb.database
+          && rawDb.database.ManagementInfo
+          && rawDb.database.ManagementInfo.PlayersInfo
+          && rawDb.database.ManagementInfo.PlayersInfo[userName];
+        if (info && info.salt && info.hashedPassword) {
+          await withClient(async (client) => {
+            await setAccountPassword(client, userName, info.salt, info.hashedPassword, 'player');
+          });
+          clearPasswordFromInMemoryMi(userName);
+        }
+      }
+      return result;
+    };
+  }
+
+  rawDb.changeAccountPassword = async function changeAccountPasswordApi(args = {}) {
+    const userName = String(args.userName || '').trim();
+    const newPassword = String(args.newPassword || '');
+    if (!userName) {
+      throw Object.assign(new Error('user-required'), { messageId: 'errors-user-is-not-found' });
+    }
+    if (!newPassword) {
+      throw Object.assign(new Error('password-required'), { messageId: 'errors-password-is-not-specified' });
+    }
+    return setPasswordInAccounts(userName, newPassword);
+  };
+
   rawDb.changeServerAdminPassword = async function changeServerAdminPasswordApi(args = {}, user) {
     if (!user || !user.isServerAdmin || !user.name) {
       throw Object.assign(new Error('forbidden'), { messageId: 'errors-forbidden' });
     }
-    const newPassword = String(args.newPassword || '');
-    if (!newPassword) {
-      throw Object.assign(new Error('password-required'), { messageId: 'errors-password-is-not-specified' });
-    }
-    const username = user.name;
-    const crypto = require('crypto');
-    const saltHex = crypto.randomBytes(16).toString('hex');
-    const hashedPassword = crypto.scryptSync(newPassword, saltHex, 64).toString('hex');
-    const salt = `scrypt$${saltHex}`;
-
-    if (pgBoot.storageMode() === 'postgres') {
-      await withClient(async (client) => {
-        const check = await client.query(
-          `SELECT 1 FROM accounts WHERE username = $1 AND is_server_admin = true LIMIT 1`,
-          [username],
-        );
-        if (!check.rows.length) {
-          throw Object.assign(new Error('not-server-admin'), { messageId: 'errors-user-is-not-found' });
-        }
-        await setAccountPassword(client, username, salt, hashedPassword, 'organizer');
-        await syncPasswordToAllProjectDocuments(client, username, salt, hashedPassword);
-      });
-    }
-
-    // Keep in-memory MI in sync with the same hash (do not re-hash via setPassword).
-    try {
-      const usersInfo = rawDb.database
-        && rawDb.database.ManagementInfo
-        && rawDb.database.ManagementInfo.UsersInfo;
-      if (usersInfo && usersInfo[username]) {
-        usersInfo[username].salt = salt;
-        usersInfo[username].hashedPassword = hashedPassword;
-      }
-    } catch {
-      /* ignore */
-    }
-    return { ok: true, username };
+    return rawDb.changeAccountPassword({ userName: user.name, newPassword: args.newPassword }, user);
   };
 }
 

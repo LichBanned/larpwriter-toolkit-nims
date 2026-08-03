@@ -182,7 +182,14 @@ async function setAccountServerAdmin(client, username, value) {
      WHERE username = $1 RETURNING id, username, is_server_admin`,
     [username, !!value],
   );
-  return r.rows[0] || null;
+  if (r.rows[0]) return r.rows[0];
+  const ins = await client.query(
+    `INSERT INTO accounts (username, kind, is_server_admin)
+     VALUES ($1, 'organizer', $2)
+     RETURNING id, username, is_server_admin`,
+    [username, !!value],
+  );
+  return ins.rows[0] || null;
 }
 
 async function mergeActivePlayerMemberships(client, slug, database) {

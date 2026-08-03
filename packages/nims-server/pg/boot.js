@@ -236,6 +236,7 @@ module.exports = {
   loadBootDatabase,
   persistDatabase,
   loadProjectDatabase,
+  pickAuthRow,
   verifyAccountPassword,
   getMembershipFlags,
   ownsEntity,

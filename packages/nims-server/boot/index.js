@@ -134,7 +134,7 @@ module.exports = function (app, dbms) {
                         const {
                             withClient,
                             setAccountPassword,
-                            syncPasswordToAllProjectDocuments,
+                            stripCredentialsFromManagementInfo,
                         } = require('../../nims-dbms/pg/storage');
                         await withClient(async (client) => {
                             await setAccountPassword(
@@ -144,13 +144,9 @@ module.exports = function (app, dbms) {
                                 orgOrPlayer.hashedPassword,
                                 user.role === 'player' ? 'player' : 'organizer',
                             );
-                            await syncPasswordToAllProjectDocuments(
-                                client,
-                                username,
-                                orgOrPlayer.salt,
-                                orgOrPlayer.hashedPassword,
-                            );
                         });
+                        const mi = userStorage.database && userStorage.database.ManagementInfo;
+                        if (mi) stripCredentialsFromManagementInfo(mi);
                     }
                     const flags = await pgBoot.getMembershipFlags(username);
                     finish({

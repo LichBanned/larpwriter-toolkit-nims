@@ -3,6 +3,7 @@
 const emptyBase = require('nims-resources/emptyBase');
 const { createServerDbms } = require('nims-dbms');
 const { wrapWithPermissions } = require('../../permissions');
+const { attachHistoryAndProjectsApi } = require('../../pg/attachApi');
 
 const PASS = 'TestPass1!';
 
@@ -10,10 +11,12 @@ const PASS = 'TestPass1!';
  * In-memory DBMS + permission proxy with admin / org / editor / player.
  */
 async function createRbacFixture() {
+    process.env.NIMS_STORAGE = 'json';
     const raw = createServerDbms(structuredClone(emptyBase.data), {
         adminLogin: 'admin',
         adminPass: PASS,
     });
+    attachHistoryAndProjectsApi(raw, { rawDb: raw, db: raw, preparedDb: null });
     const db = wrapWithPermissions(raw);
     const admin = { name: 'admin', role: 'organizer' };
 

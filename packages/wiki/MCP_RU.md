@@ -15,6 +15,8 @@ MCP (Model Context Protocol) позволяет подключить AI-асси
 
 Токен живёт **24 часа** (настраивается в `packages/nims-server/config/nims-frontend-global.json`, ключ `mcp.tokenTtlMs`). По истечении срока получите новый на `/mcp/auth`.
 
+Автотесты инстанса (включая Postgres multiproject/history) — через `docker-compose.test.yml` / `npm run test:docker` (см. `packages/wiki/POSTGRES_OPS.md`).
+
 ## Получение токена через API
 
 ```bash
@@ -160,7 +162,7 @@ docker compose -f docker-compose.test.yml up --build
 
 **Резервная копия** — `export_database`, сохранить JSON в файл.
 
-**Восстановление / перенос** — `import_database` (admin), с `preserveManagementInfo: true` по умолчанию — пользователи сервера не затрутся.
+**Восстановление / перенос** — `import_database` (admin), с `preserveManagementInfo: true` по умолчанию — пользователи и пароли **не изменяются** (аккаунты только в `accounts`). Экспорт JSON тоже без паролей.
 
 **Редактирование вводных вне НИМС** — `export_briefings` с `format: markdown` → правки → `import_briefings`.
 

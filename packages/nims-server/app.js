@@ -72,12 +72,44 @@ async function initDatabase() {
 
     await db.setDatabase({
         database: seedDb,
-        // Authoritative project document from Postgres must replace empty engine MI as-is.
-        preserveManagementInfo: !loadedFromPg,
+        // Boot replaces engine MI with the seed document as-is (PG or JSON file).
+        // UI/API imports use preserveManagementInfo: true so users/accounts stay untouched.
+        preserveManagementInfo: false,
     });
 
     if (shouldEnsureAdmin) {
-        await db.ensureAdminExists(config.get('inits:adminLogin'), config.get('inits:adminPass'));
+        const adminLogin = config.get('inits:adminLogin');
+        let adminPasswordAlreadySet = false;
+        if (mode === 'postgres') {
+            try {
+                const { withClient } = require('../nims-dbms/pg/storage');
+                adminPasswordAlreadySet = await withClient(async (client) => {
+                    const r = await client.query(
+                        `SELECT 1 FROM accounts
+                         WHERE username = $1
+                           AND salt IS NOT NULL AND salt <> ''
+                           AND password_hash IS NOT NULL AND password_hash <> ''
+                         LIMIT 1`,
+                        [adminLogin],
+                    );
+                    return r.rows.length > 0;
+                });
+            } catch (err) {
+                log.error(`admin password check: ${err && err.message ? err.message : err}`);
+            }
+        } else {
+            const info = db.database
+                && db.database.ManagementInfo
+                && db.database.ManagementInfo.UsersInfo
+                && db.database.ManagementInfo.UsersInfo[adminLogin];
+            adminPasswordAlreadySet = !!(info && info.salt && info.hashedPassword);
+        }
+        if (adminPasswordAlreadySet) {
+            log.info(`admin "${adminLogin}" already has a password; skip NIMS_ADMIN_PASS seed`);
+        } else {
+            await db.ensureAdminExists(adminLogin, config.get('inits:adminPass'));
+            log.info(`admin "${adminLogin}" credentials seeded from env (was missing)`);
+        }
     }
 
     if (mode === 'postgres') {

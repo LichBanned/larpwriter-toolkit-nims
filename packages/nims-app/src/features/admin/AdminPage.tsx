@@ -24,16 +24,12 @@ function AdminPage() {
   const [opened, { open, close }] = useDisclosure(false);
   const [playerOpened, { open: openPlayer, close: closePlayer }] = useDisclosure(false);
   const [linkOpened, { open: openLink, close: closeLink }] = useDisclosure(false);
-  const [passOpened, { open: openPass, close: closePass }] = useDisclosure(false);
   const [newName, setNewName] = useState('');
   const [newPass, setNewPass] = useState('');
   const [playerName, setPlayerName] = useState('');
   const [playerPass, setPlayerPass] = useState('');
   const [linkLogin, setLinkLogin] = useState<string | null>(null);
   const [linkProfile, setLinkProfile] = useState<string | null>(null);
-  const [passTarget, setPassTarget] = useState<{ kind: 'organizer' | 'player'; name: string } | null>(null);
-  const [passValue, setPassValue] = useState('');
-  const [passSaving, setPassSaving] = useState(false);
   const [assignUser, setAssignUser] = useState<string | null>(null);
   const resetRef = useRef<() => void>(null);
 
@@ -153,38 +149,6 @@ function AdminPage() {
       await api.call('removeOrganizer', { name });
       await loadMgmt();
     } catch (e: any) { notifications.show({ title: 'Ошибка', message: e.message, color: 'red' }); }
-  };
-
-  const openChangePassword = (kind: 'organizer' | 'player', name: string) => {
-    setPassTarget({ kind, name });
-    setPassValue('');
-    openPass();
-  };
-
-  const handleConfirmPasswordChange = async () => {
-    if (!passTarget || !passValue.trim()) return;
-    setPassSaving(true);
-    try {
-      if (passTarget.kind === 'organizer') {
-        await api.call('changeOrganizerPassword', {
-          userName: passTarget.name,
-          newPassword: passValue.trim(),
-        });
-      } else {
-        await api.call('changePlayerPassword', {
-          userName: passTarget.name,
-          newPassword: passValue.trim(),
-        });
-      }
-      notifications.show({ title: 'Готово', message: 'Пароль изменён', color: 'green' });
-      setPassTarget(null);
-      setPassValue('');
-      closePass();
-    } catch (e: any) {
-      notifications.show({ title: 'Ошибка', message: e.message, color: 'red' });
-    } finally {
-      setPassSaving(false);
-    }
   };
 
   const handleCreatePlayer = async () => {
@@ -368,7 +332,7 @@ function AdminPage() {
       await api.call('setDatabase', { database, preserveManagementInfo: true });
       notifications.show({
         title: 'Готово',
-        message: 'База загружена. Существующие пользователи сохранены, новые из файла добавлены.',
+        message: 'База загружена. Пользователи и пароли не изменялись.',
         color: 'green',
       });
       await loadMgmt();
@@ -391,7 +355,19 @@ function AdminPage() {
     } catch (e: any) { notifications.show({ title: 'Ошибка', message: e.message, color: 'red' }); }
   };
 
-  const orgNames = mgmt?.usersInfo ? Object.keys(mgmt.usersInfo) : [];
+  const orgNames = useMemo(
+    () => (mgmt?.usersInfo
+      ? Object.keys(mgmt.usersInfo).filter((name) => !serverAdmins.has(name))
+      : []),
+    [mgmt, serverAdmins],
+  );
+
+  const organizerEntries = useMemo(
+    () => (mgmt?.usersInfo
+      ? Object.entries(mgmt.usersInfo).filter(([name]) => !serverAdmins.has(name))
+      : []),
+    [mgmt, serverAdmins],
+  );
 
   return (
     <Stack gap="lg">
@@ -409,11 +385,14 @@ function AdminPage() {
           <Tabs.Panel value="organizers" pt="md">
             <Card shadow="sm" padding="md" withBorder>
               <Group justify="space-between" mb="md">
-                <Text fw={600}>Организаторы</Text>
+                <div>
+                  <Text fw={600}>Организаторы</Text>
+                  <Text size="xs" c="dimmed">Пароли меняются в разделе «Проекты» (суперадмин)</Text>
+                </div>
                 <Button size="xs" onClick={open}>Добавить</Button>
               </Group>
 
-              {mgmt?.usersInfo && Object.keys(mgmt.usersInfo).length > 0 ? (
+              {organizerEntries.length > 0 ? (
                 <HScroll minWidth={640}>
                   <Table striped>
                     <Table.Thead>
@@ -425,48 +404,41 @@ function AdminPage() {
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
-                      {Object.entries(mgmt.usersInfo).map(([name, info]: [string, any]) => {
+                      {organizerEntries.map(([name, info]: [string, any]) => {
                         const isUserAdmin = (mgmt.admins || []).includes(name);
                         const isUserEditor = (mgmt.editors || []).includes(name);
-                        const isSuperAdmin = serverAdmins.has(name);
                         return (
                           <Table.Tr key={name}>
                             <Table.Td>
                               {name}
-                              {isSuperAdmin && <Badge ml="xs" size="xs" color="violet">суперадмин</Badge>}
                               {isUserAdmin && <Badge ml="xs" size="xs" color="red">админ</Badge>}
                               {isUserEditor && <Badge ml="xs" size="xs" color="blue">редактор</Badge>}
-                              {!isUserAdmin && !isUserEditor && !isSuperAdmin && (
+                              {!isUserAdmin && !isUserEditor && (
                                 <Badge ml="xs" size="xs" color="gray" variant="outline">организатор</Badge>
                               )}
                             </Table.Td>
                             <Table.Td>{info.characters?.length || 0}</Table.Td>
                             <Table.Td>{info.stories?.length || 0}</Table.Td>
                             <Table.Td>
-                              {isSuperAdmin ? (
-                                <Text size="xs" c="dimmed">Пароль — в разделе «Проекты»</Text>
-                              ) : (
-                                <Group gap={4} wrap="wrap">
-                                  {isUserAdmin ? (
-                                    <Button size="xs" variant="subtle" color="gray" onClick={async () => {
-                                      await api.call('revokeAdmin', { name });
-                                      await loadMgmt();
-                                    }}>Снять админа</Button>
-                                  ) : (
-                                    <Button size="xs" variant="subtle" color="red" onClick={async () => {
-                                      await api.call('assignAdmin', { name });
-                                      await loadMgmt();
-                                    }}>Админ</Button>
-                                  )}
-                                  {isUserEditor ? (
-                                    <Button size="xs" variant="subtle" color="gray" onClick={() => handleRevokeEditor(name)}>Снять редактора</Button>
-                                  ) : (
-                                    <Button size="xs" variant="subtle" color="blue" onClick={() => handleAssignEditor(name)}>Редактор</Button>
-                                  )}
-                                  <Button size="xs" variant="subtle" onClick={() => openChangePassword('organizer', name)}>Пароль</Button>
-                                  <Button size="xs" variant="subtle" color="red" onClick={() => handleRemoveOrg(name)}>Удалить</Button>
-                                </Group>
-                              )}
+                              <Group gap={4} wrap="wrap">
+                                {isUserAdmin ? (
+                                  <Button size="xs" variant="subtle" color="gray" onClick={async () => {
+                                    await api.call('revokeAdmin', { name });
+                                    await loadMgmt();
+                                  }}>Снять админа</Button>
+                                ) : (
+                                  <Button size="xs" variant="subtle" color="red" onClick={async () => {
+                                    await api.call('assignAdmin', { name });
+                                    await loadMgmt();
+                                  }}>Админ</Button>
+                                )}
+                                {isUserEditor ? (
+                                  <Button size="xs" variant="subtle" color="gray" onClick={() => handleRevokeEditor(name)}>Снять редактора</Button>
+                                ) : (
+                                  <Button size="xs" variant="subtle" color="blue" onClick={() => handleAssignEditor(name)}>Редактор</Button>
+                                )}
+                                <Button size="xs" variant="subtle" color="red" onClick={() => handleRemoveOrg(name)}>Удалить</Button>
+                              </Group>
                             </Table.Td>
                           </Table.Tr>
                         );
@@ -598,7 +570,7 @@ function AdminPage() {
               </Group>
               <Text size="sm" c="dimmed" mb="md">
                 Игрок регистрируется сам или создаётся здесь. Логин можно связать с уже заведённым
-                профилем (имена могут отличаться).
+                профилем (имена могут отличаться). Пароли меняются в разделе «Проекты» (суперадмин).
               </Text>
               {playerLogins.length === 0 ? (
                 <Text size="sm" c="dimmed">Пока нет логинов. Включите регистрацию или создайте игрока.</Text>
@@ -648,9 +620,6 @@ function AdminPage() {
                                       Отвязать
                                     </Button>
                                   )}
-                                  <Button size="compact-xs" variant="subtle" onClick={() => openChangePassword('player', name)}>
-                                    Пароль
-                                  </Button>
                                   <Button size="compact-xs" variant="subtle" color="blue" onClick={() => handlePromotePlayer(name)}>
                                     В организаторы
                                   </Button>
@@ -774,37 +743,6 @@ function AdminPage() {
             <Button variant="subtle" onClick={closeLink}>{t('common.cancel')}</Button>
             <Button onClick={handleLinkLogin} disabled={!linkLogin || !linkProfile}>
               Связать
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-
-      <Modal
-        opened={passOpened}
-        onClose={() => { closePass(); setPassTarget(null); setPassValue(''); }}
-        title={passTarget ? `Новый пароль: ${passTarget.name}` : 'Смена пароля'}
-      >
-        <Stack>
-          <PasswordInput
-            label="Новый пароль"
-            value={passValue}
-            onChange={(e) => setPassValue(e.currentTarget.value)}
-            autoFocus
-            autoComplete="new-password"
-          />
-          <Group justify="flex-end">
-            <Button
-              variant="subtle"
-              onClick={() => { closePass(); setPassTarget(null); setPassValue(''); }}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              onClick={handleConfirmPasswordChange}
-              loading={passSaving}
-              disabled={!passValue.trim()}
-            >
-              Сохранить
             </Button>
           </Group>
         </Stack>

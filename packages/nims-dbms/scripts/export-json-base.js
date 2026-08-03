@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Client } = require('pg');
-const { loadDatabaseFromProject } = require('../pg/storage');
+const { loadDatabaseFromProject, stripCredentialsFromManagementInfo } = require('../pg/storage');
 
 function parseArgs(argv) {
   const out = { slug: 'main', out: null };
@@ -40,6 +40,7 @@ async function main() {
       process.exit(1);
     }
     const outPath = path.resolve(args.out);
+    stripCredentialsFromManagementInfo(loaded.database.ManagementInfo);
     fs.writeFileSync(outPath, JSON.stringify(loaded.database, null, 2) + '\n', 'utf8');
     console.log(JSON.stringify({ ok: true, slug: args.slug, out: outPath, projectId: loaded.projectId }, null, 2));
   } finally {

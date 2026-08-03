@@ -17,6 +17,13 @@ function getPool() {
   return pool;
 }
 
+async function resetPool() {
+  if (!pool) return;
+  const p = pool;
+  pool = null;
+  await p.end();
+}
+
 async function withClient(fn) {
   const p = getPool();
   const client = await p.connect();
@@ -31,7 +38,8 @@ async function withClient(fn) {
  * @param {import('pg').PoolClient} client
  * @param {object} database — NIMS Database document
  * @param {string} slug
- * @param {{ baselineRevision?: boolean }} [opts]
+ * @param {{ baselineRevision?: boolean, syncAccounts?: boolean }} [opts]
+ *   syncAccounts: false — content-only import (do not create/update accounts from MI)
  */
 async function saveDatabaseToProject(client, database, slug, opts = {}) {
   const meta = database.Meta || {};
@@ -118,7 +126,11 @@ async function saveDatabaseToProject(client, database, slug, opts = {}) {
       `INSERT INTO project_documents (project_id, document, updated_at)
        VALUES ($1, $2::jsonb, now())
        ON CONFLICT (project_id) DO UPDATE SET document = EXCLUDED.document, updated_at = now()`,
-      [projectId, JSON.stringify(database)],
+      [projectId, JSON.stringify((() => {
+        const docForStore = JSON.parse(JSON.stringify(database));
+        stripCredentialsFromManagementInfo(docForStore.ManagementInfo);
+        return docForStore;
+      })())],
     );
 
     // profile defs
@@ -299,9 +311,29 @@ async function saveDatabaseToProject(client, database, slug, opts = {}) {
       );
     }
 
+    // accounts + memberships + ownership (skipped for content-only JSON import)
+    if (opts.syncAccounts === false) {
+      stripCredentialsFromManagementInfo(mi);
+      if (opts.baselineRevision) {
+        const revCheck = await client.query(
+          `SELECT 1 FROM entity_revisions WHERE project_id = $1 AND entity_type = 'project' AND entity_id = $2 AND reason = 'import' LIMIT 1`,
+          [projectId, String(projectId)],
+        );
+        if (!revCheck.rows.length) {
+          await client.query(
+            `INSERT INTO entity_revisions
+              (project_id, entity_type, entity_id, revision, snapshot, command, reason)
+             VALUES ($1,'project',$2,1,$3::jsonb,'import','import')`,
+            [projectId, String(projectId), JSON.stringify({ slug, meta })],
+          );
+        }
+      }
+      return projectId;
+    }
+
     // accounts + memberships + ownership
-    // Login credentials live in accounts; overlay them into MI so project docs stay consistent.
-    await applyAccountCredentialsToManagementInfo(client, mi);
+    // Credentials may briefly exist in in-memory MI (createOrganizer/signUp); promote into
+    // accounts if missing, then strip so project docs never store passwords.
     const usersInfo = mi.UsersInfo || {};
     const playersInfo = mi.PlayersInfo || {};
     const admins = new Set([...(mi.admins || []), mi.admin].filter(Boolean));
@@ -380,6 +412,9 @@ async function saveDatabaseToProject(client, database, slug, opts = {}) {
       await ensureAccount(username, info, 'player');
     }
 
+    // Never keep login secrets in project ManagementInfo (in-memory or on disk).
+    stripCredentialsFromManagementInfo(mi);
+
     if (opts.baselineRevision) {
       const revCheck = await client.query(
         `SELECT 1 FROM entity_revisions WHERE project_id = $1 AND entity_type = 'project' AND entity_id = $2 AND reason = 'import' LIMIT 1`,
@@ -454,69 +489,73 @@ async function setAccountPassword(client, username, salt, passwordHash, kind) {
   return ins.rows[0];
 }
 
-/** Copy accounts credentials into ManagementInfo maps (never the reverse for existing accounts). */
-async function applyAccountCredentialsToManagementInfo(client, mi) {
-  if (!mi) return;
-  const usersInfo = mi.UsersInfo || {};
-  const playersInfo = mi.PlayersInfo || {};
-  const names = [...new Set([...Object.keys(usersInfo), ...Object.keys(playersInfo)])];
-  if (!names.length) return;
-  const r = await client.query(
-    `SELECT username, salt, password_hash FROM accounts
-     WHERE username = ANY($1::text[]) AND salt IS NOT NULL AND password_hash IS NOT NULL`,
-    [names],
-  );
-  const byName = new Map(r.rows.map((row) => [row.username, row]));
-  for (const [uname, info] of Object.entries(usersInfo)) {
-    const acc = byName.get(uname);
-    if (!acc || !info) continue;
-    info.salt = acc.salt;
-    info.hashedPassword = acc.password_hash;
+/** Remove salt/hashedPassword from ManagementInfo user maps. */
+function stripCredentialsFromManagementInfo(mi) {
+  if (!mi) return false;
+  let changed = false;
+  for (const info of Object.values(mi.UsersInfo || {})) {
+    if (!info) continue;
+    if ('salt' in info || 'hashedPassword' in info) {
+      delete info.salt;
+      delete info.hashedPassword;
+      changed = true;
+    }
   }
-  for (const [uname, info] of Object.entries(playersInfo)) {
-    const acc = byName.get(uname);
-    if (!acc || !info) continue;
-    info.salt = acc.salt;
-    info.hashedPassword = acc.password_hash;
+  for (const info of Object.values(mi.PlayersInfo || {})) {
+    if (!info) continue;
+    if ('salt' in info || 'hashedPassword' in info) {
+      delete info.salt;
+      delete info.hashedPassword;
+      changed = true;
+    }
   }
+  return changed;
 }
 
-/** Update salt/hash for a username in every project document. */
-async function syncPasswordToAllProjectDocuments(client, username, salt, hashedPassword) {
+/**
+ * @deprecated Passwords must not live in project docs. No-op alias kept for old callers.
+ * Prefer stripCredentialsFromAllProjectDocuments.
+ */
+async function applyAccountCredentialsToManagementInfo(client, mi) {
+  stripCredentialsFromManagementInfo(mi);
+}
+
+/** Strip login credentials from every project document. */
+async function stripCredentialsFromAllProjectDocuments(client) {
   const docs = await client.query('SELECT project_id, document FROM project_documents');
+  let updated = 0;
   for (const row of docs.rows) {
     const doc = row.document;
     if (!doc || !doc.ManagementInfo) continue;
-    let changed = false;
     const next = JSON.parse(JSON.stringify(doc));
-    const ui = next.ManagementInfo.UsersInfo && next.ManagementInfo.UsersInfo[username];
-    if (ui) {
-      ui.salt = salt;
-      ui.hashedPassword = hashedPassword;
-      changed = true;
-    }
-    const pi = next.ManagementInfo.PlayersInfo && next.ManagementInfo.PlayersInfo[username];
-    if (pi) {
-      pi.salt = salt;
-      pi.hashedPassword = hashedPassword;
-      changed = true;
-    }
-    if (!changed) continue;
+    if (!stripCredentialsFromManagementInfo(next.ManagementInfo)) continue;
     await client.query(
       `UPDATE project_documents SET document = $2::jsonb, updated_at = now() WHERE project_id = $1`,
       [row.project_id, JSON.stringify(next)],
     );
+    updated += 1;
   }
+  return updated;
+}
+
+/**
+ * @deprecated Was writing hashes into every project. Now strips them instead.
+ */
+async function syncPasswordToAllProjectDocuments(client) {
+  return stripCredentialsFromAllProjectDocuments(client);
 }
 
 module.exports = {
   getPool,
+  resetPool,
   withClient,
   saveDatabaseToProject,
   loadDatabaseFromProject,
   listProjectSlugs,
   getAccountAuth,
   setAccountPassword,
+  stripCredentialsFromManagementInfo,
+  stripCredentialsFromAllProjectDocuments,
   applyAccountCredentialsToManagementInfo,
   syncPasswordToAllProjectDocuments,
 };

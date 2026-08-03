@@ -3,7 +3,7 @@ import type { Database, GameMeta } from '../domain/types';
 import { ensureString, ensureEnum } from '../utils/precondition';
 import { META_INFO_STRINGS, META_INFO_DATES } from '../utils/constants';
 import { ensureDatabaseDefaults } from '../utils/defaults';
-import { mergeManagementInfo } from '../utils/managementMerge';
+import { mergeManagementInfo, stripUserCredentials } from '../utils/managementMerge';
 
 export class MetaEngine {
   constructor(private engine: DatabaseEngine) {}
@@ -12,13 +12,16 @@ export class MetaEngine {
     if (this.engine.database.Meta) {
       this.engine.database.Meta.saveTime = new Date().toString();
     }
-    // Full dump including ManagementInfo password hashes — needed for backup/restore.
-    return structuredClone(this.engine.database);
+    const dump = structuredClone(this.engine.database);
+    // Public dump / export: never include login secrets. In-memory MI stays intact
+    // (json-mode auth + local autosave read db.database directly).
+    stripUserCredentials(dump.ManagementInfo);
+    return dump;
   }
 
   /**
    * Replace game content.
-   * By default merges ManagementInfo: keeps existing users/passwords, adds missing from the file.
+   * By default keeps current ManagementInfo users/roles untouched (no merge from file).
    * Pass preserveManagementInfo: false to take ManagementInfo from the file as-is (server boot).
    */
   async setDatabase({

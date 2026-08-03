@@ -9,6 +9,22 @@
 | `NIMS_PROJECT_SLUG` | slug проекта после импорта | `main` |
 | `POSTGRES_USER` / `PASSWORD` / `DB` | для compose | `nims` |
 
+## Тесты (Docker-only)
+
+Канон запуска из корня репозитория:
+
+```bash
+npm run test:docker        # unit + PG integration + Vitest stores + HTTP
+npm run test:docker:cov    # то же + c8 HTML/text в ./coverage и --check-coverage
+npm run test:docker:down   # down -v
+```
+
+Compose: `docker-compose.test.yml` — сервисы `postgres` (БД `nims_test`), `app` (NIMS_STORAGE=postgres), `test` (runner).
+
+Без `DATABASE_URL` PG-тесты падают (не skip).
+
+Пороги c8 (после прогона): `scripts/check-coverage-thresholds.js` — `nims-dbms/pg` ≥70/55, `nims-server/pg` ≥65/50, `permissionProxy` ≥75/60, `requestProcessing`+`auth` ≥60/45. Vitest stores — ≥70/55 (`vitest.config.ts`). Отчёт: `./coverage`.
+
 ## Локально / compose
 
 ```bash

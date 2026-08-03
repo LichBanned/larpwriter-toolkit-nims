@@ -36,10 +36,16 @@ module.exports = (db) => {
         const filePath = path.normalize(path.join(root, `${instanceName}-${projectName}-base${curIndex + 1}.json`));
         log.info(`filePath:${filePath}`);
 
-        db.getDatabase().then((data) => {
-            fs.writeFile(filePath, JSON.stringify(data, null, 2), (err2) => {
+        try {
+            // getDatabase() strips credentials for export; json-mode auth still lives in MI —
+            // persist the in-memory document so logins survive restart.
+            const raw = structuredClone(db.database);
+            if (raw.Meta) raw.Meta.saveTime = new Date().toString();
+            fs.writeFile(filePath, JSON.stringify(raw, null, 2), (err2) => {
                 if (err2) { console.error(err2); }
             });
-        }).catch(err => console.error(err));
+        } catch (err) {
+            console.error(err);
+        }
     }, interval);
 };

@@ -1,83 +1,59 @@
 import type { ManagementInfo } from '../domain/types';
 
-function asStringList(value: unknown): string[] {
-  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string' && v.length > 0);
-  if (typeof value === 'string' && value) return [value];
-  return [];
-}
-
-function hasPasswordMaterial(info: unknown): boolean {
-  if (!info || typeof info !== 'object') return false;
-  const u = info as Record<string, unknown>;
-  return Boolean(u.salt && u.hashedPassword);
-}
-
-function mergeUserMaps(
-  existing: Record<string, unknown> | undefined,
-  incoming: Record<string, unknown> | undefined,
-): Record<string, unknown> {
-  // Start from upload, then overlay server users. Prefer whichever side still has hashes
-  // so a stripped autosave/export cannot wipe credentials.
-  const result: Record<string, unknown> = { ...(incoming || {}) };
-  for (const [name, info] of Object.entries(existing || {})) {
-    const curr = result[name];
-    if (!curr) {
-      result[name] = info;
-    } else if (hasPasswordMaterial(info) || !hasPasswordMaterial(curr)) {
-      result[name] = info;
+/** Remove login secrets from ManagementInfo user maps (mutate in place). */
+export function stripUserCredentials(mi: ManagementInfo | undefined | null): boolean {
+  if (!mi || typeof mi !== 'object') return false;
+  let changed = false;
+  for (const info of Object.values((mi.UsersInfo || {}) as Record<string, Record<string, unknown>>)) {
+    if (!info || typeof info !== 'object') continue;
+    if ('salt' in info || 'hashedPassword' in info) {
+      delete info.salt;
+      delete info.hashedPassword;
+      changed = true;
     }
-    // else keep incoming (it has password material, existing does not)
   }
-  return result;
+  for (const info of Object.values((mi.PlayersInfo || {}) as Record<string, Record<string, unknown>>)) {
+    if (!info || typeof info !== 'object') continue;
+    if ('salt' in info || 'hashedPassword' in info) {
+      delete info.salt;
+      delete info.hashedPassword;
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 /**
- * Merge ManagementInfo when importing a database:
- * - existing organizers/players (and their passwords) are kept;
- * - users present only in the uploaded file are added;
- * - admin/editor role lists are united.
+ * Content-only import: drop organizers/players from a JSON dump so accounts are never
+ * created/updated from the file. Keeps WelcomeText / PlayersOptions / adaptationRights.
+ */
+export function scrubUsersFromImportedDatabase<T extends { ManagementInfo?: ManagementInfo }>(
+  database: T,
+): T {
+  const mi = database.ManagementInfo;
+  if (!mi || typeof mi !== 'object') return database;
+  mi.UsersInfo = {} as ManagementInfo['UsersInfo'];
+  mi.PlayersInfo = {} as ManagementInfo['PlayersInfo'];
+  (mi as Record<string, unknown>).admins = [];
+  (mi as Record<string, unknown>).editors = [];
+  (mi as Record<string, unknown>).admin = '';
+  (mi as Record<string, unknown>).editor = '';
+  stripUserCredentials(mi);
+  return database;
+}
+
+/**
+ * When importing game JSON with preserveManagementInfo: keep current users/roles as-is.
+ * Do not merge organizers/players/admins from the uploaded file (accounts live elsewhere).
  */
 export function mergeManagementInfo(
   existing: ManagementInfo | undefined,
   incoming: ManagementInfo | undefined,
 ): ManagementInfo {
-  const curr = existing || {};
-  const inc = incoming || {};
-
-  const UsersInfo = mergeUserMaps(
-    curr.UsersInfo as Record<string, unknown> | undefined,
-    inc.UsersInfo as Record<string, unknown> | undefined,
-  );
-  const PlayersInfo = mergeUserMaps(
-    curr.PlayersInfo as Record<string, unknown> | undefined,
-    inc.PlayersInfo as Record<string, unknown> | undefined,
-  );
-
-  const admins = [...new Set([
-    ...asStringList(curr.admins),
-    ...asStringList(curr.admin),
-    ...asStringList(inc.admins),
-    ...asStringList(inc.admin),
-  ])].filter((name) => name in UsersInfo);
-
-  const editors = [...new Set([
-    ...asStringList(curr.editors),
-    ...asStringList(curr.editor),
-    ...asStringList(inc.editors),
-    ...asStringList(inc.editor),
-  ])].filter((name) => name in UsersInfo);
-
-  return {
-    ...inc,
-    ...curr,
-    UsersInfo,
-    PlayersInfo,
-    admins,
-    admin: admins[0] || '',
-    editors,
-    editor: editors[0] || '',
-    adaptationRights: (curr.adaptationRights as string)
-      || (inc.adaptationRights as string)
-      || '',
-  };
+  if (existing && typeof existing === 'object') {
+    return structuredClone(existing);
+  }
+  const next = structuredClone(incoming || {}) as ManagementInfo;
+  stripUserCredentials(next);
+  return next;
 }

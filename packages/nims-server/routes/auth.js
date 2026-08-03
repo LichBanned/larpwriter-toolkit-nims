@@ -5,7 +5,6 @@ const pgBoot = require('../pg/boot');
 const {
     withClient,
     setAccountPassword,
-    syncPasswordToAllProjectDocuments,
 } = require('../../nims-dbms/pg/storage');
 
 const authRateLimit = createRateLimiter({
@@ -165,13 +164,9 @@ module.exports = function (app, dbms) {
                                     info.hashedPassword,
                                     'player',
                                 );
-                                await syncPasswordToAllProjectDocuments(
-                                    client,
-                                    userName,
-                                    info.salt,
-                                    info.hashedPassword,
-                                );
                             });
+                            delete info.salt;
+                            delete info.hashedPassword;
                         }
                     } catch (err) {
                         log.error(`signup accounts sync: ${err && err.message ? err.message : err}`);

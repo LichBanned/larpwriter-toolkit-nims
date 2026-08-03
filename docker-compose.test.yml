@@ -1,0 +1,103 @@
+# Ephemeral Postgres + NIMS app + test runner (coverage).
+# Usage:
+#   docker compose -f docker-compose.test.yml run --rm test
+#   docker compose -f docker-compose.test.yml down -v
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nims
+      POSTGRES_PASSWORD: nims
+      POSTGRES_DB: nims_test
+    volumes:
+      - ./docker/init-test-dbs.sql:/docker-entrypoint-initdb.d/02-unit.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nims -d nims_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    networks:
+      - nims-test
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      NIMS_STORAGE: postgres
+      DATABASE_URL: postgres://nims:nims@postgres:5432/nims_test
+      NIMS_PROJECT_SLUG: main
+      NIMS_SERVER_ADMIN: admin
+      NIMS_ADMIN_LOGIN: admin
+      NIMS_ADMIN_PASS: TestAdmin1!
+      NIMS_ENSURE_ADMIN: "1"
+      NIMS_SESSION_SECRET: test-session-secret-please-change
+      NIMS_SESSION_KEY: nims_test_sid
+      NIMS_COOKIE_SECURE: "0"
+    entrypoint: ["/app/docker/test-app-entrypoint.sh"]
+    volumes:
+      - ./docker/test-app-entrypoint.sh:/app/docker/test-app-entrypoint.sh:ro
+      - ./packages/nims-dbms/pg:/app/packages/nims-dbms/pg:ro
+      - ./packages/nims-dbms/src:/app/packages/nims-dbms/src:ro
+      - ./packages/nims-dbms/dist:/app/packages/nims-dbms/dist:ro
+      - ./packages/nims-server/pg:/app/packages/nims-server/pg:ro
+      - ./packages/nims-server/app.js:/app/packages/nims-server/app.js:ro
+      - ./packages/nims-server/autosave:/app/packages/nims-server/autosave:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:3001/"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 15s
+    networks:
+      - nims-test
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      postgres:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    environment:
+      NODE_ENV: test
+      NIMS_STORAGE: postgres
+      DATABASE_URL: postgres://nims:nims@postgres:5432/nims_unit
+      NIMS_BASE_URL: http://app:3001
+      APP_DATABASE_URL: postgres://nims:nims@postgres:5432/nims_test
+      NIMS_USER: admin
+      NIMS_PASS: TestAdmin1!
+      NIMS_ADMIN_LOGIN: admin
+      NIMS_ADMIN_PASS: TestAdmin1!
+      NIMS_PROJECT_SLUG: main
+      NIMS_SERVER_ADMIN: admin
+      COVERAGE: ${COVERAGE:-0}
+    volumes:
+      - ./coverage:/app/coverage
+      - ./scripts:/app/scripts:ro
+      - ./packages/nims-dbms/tests:/app/packages/nims-dbms/tests:ro
+      - ./packages/nims-server/tests:/app/packages/nims-server/tests:ro
+      - ./packages/nims-server/mcp/test:/app/packages/nims-server/mcp/test:ro
+      - ./packages/nims-app/src:/app/packages/nims-app/src:ro
+      - ./packages/nims-app/vitest.config.ts:/app/packages/nims-app/vitest.config.ts:ro
+      - ./packages/nims-dbms/pg:/app/packages/nims-dbms/pg:ro
+      - ./packages/nims-dbms/src:/app/packages/nims-dbms/src:ro
+      - ./packages/nims-dbms/dist:/app/packages/nims-dbms/dist:ro
+      - ./packages/nims-server/pg:/app/packages/nims-server/pg:ro
+      - ./packages/nims-server/app.js:/app/packages/nims-server/app.js:ro
+      - ./packages/nims-server/autosave:/app/packages/nims-server/autosave:ro
+      - ./docker/test-app-entrypoint.sh:/app/docker/test-app-entrypoint.sh:ro
+    entrypoint: ["/app/scripts/run-docker-tests.sh"]
+    networks:
+      - nims-test
+
+networks:
+  nims-test:
+    driver: bridge

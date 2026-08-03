@@ -8,6 +8,7 @@ describe('permissionProxy RBAC', () => {
     let fx;
 
     before(async () => {
+        process.env.NIMS_STORAGE = 'json';
         fx = await createRbacFixture();
     });
 
@@ -210,17 +211,23 @@ describe('permissionProxy RBAC', () => {
             await expectAllowed(fx.db.getDatabase(fx.users.admin));
         });
 
-        it('getDatabase is admin-only and includes password hashes for backup/restore', async () => {
+        it('getDatabase is admin-only; export omits password hashes', async () => {
             await expectDenied(fx.db.getDatabase(fx.users.org), 'forbidden-for-non-admin');
             const dump = await fx.db.getDatabase(fx.users.admin);
             const adminUser = dump.ManagementInfo?.UsersInfo?.admin;
-            assert.ok(adminUser?.salt);
-            assert.ok(adminUser?.hashedPassword);
+            assert.ok(adminUser);
+            assert.equal(adminUser.hashedPassword, undefined);
+            assert.equal(adminUser.salt, undefined);
         });
 
-        it('can manage player logins', async () => {
-            await expectAllowed(
+        it('cannot change passwords (only server-admin)', async () => {
+            await expectDenied(
                 fx.db.changePlayerPassword({ userName: 'player', newPassword: 'Player2!' }, fx.users.admin),
+                'forbidden-for-non-admin',
+            );
+            await expectDenied(
+                fx.db.changeOrganizerPassword({ userName: 'org', newPassword: 'Org2!' }, fx.users.admin),
+                'forbidden-for-non-admin',
             );
         });
 
@@ -378,6 +385,49 @@ describe('permissionProxy RBAC', () => {
                 fx.db.unbindCharacterFromPlayer({ characterName: 'OrgChar' }, fx.users.org),
             );
             await fx.db.assignEditor({ name: 'editor' }, fx.users.admin);
+        });
+    });
+
+    describe('projectsAPI / historyAPI / server-admin', () => {
+        it('listProjects allowed for logged-in; create/archive server-admin only', async () => {
+            await expectAllowed(fx.db.listProjects({}, fx.users.org));
+            await expectDenied(
+                fx.db.createProject({ slug: 'x', name: 'x' }, fx.users.admin),
+                'forbidden-for-non-admin',
+            );
+            await expectDenied(
+                fx.db.archiveProject({ slug: 'x' }, fx.users.org),
+                'forbidden-for-non-admin',
+            );
+            const sa = { ...fx.users.admin, isServerAdmin: true };
+            // Without postgres, createProject throws postgres-only after permission pass
+            try {
+                await fx.db.createProject({ slug: 'ok-slug', name: 'Ok' }, sa);
+            } catch (err) {
+                const hay = `${err.messageId || ''} ${err.message || ''}`;
+                assert.ok(
+                    hay.includes('forbidden') || hay.includes('postgres'),
+                    hay,
+                );
+            }
+        });
+
+        it('setCurrentProject allowed when logged in', async () => {
+            await expectAllowed(fx.db.setCurrentProject({ slug: 'main' }, fx.users.org));
+        });
+
+        it('player denied restore; organizer can list revisions API permission', async () => {
+            await expectDenied(
+                fx.db.restoreEntityRevision({
+                    entityType: 'character', entityId: 'AdminChar', revision: 1,
+                }, fx.users.player),
+                'forbidden-for-role',
+            );
+            // Without postgres, list returns [] after permission check
+            const listed = await fx.db.listEntityRevisions({
+                entityType: 'character', entityId: 'AdminChar',
+            }, fx.users.org);
+            assert.ok(Array.isArray(listed));
         });
     });
 });

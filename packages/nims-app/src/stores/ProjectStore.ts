@@ -20,7 +20,7 @@ export class ProjectStore {
   lastError: string | null = null;
 
   constructor(private root: RootStore) {
-    makeAutoObservable(this, {}, { autoBind: true });
+    makeAutoObservable(this, { root: false }, { autoBind: true });
   }
 
   get currentSlug() {
