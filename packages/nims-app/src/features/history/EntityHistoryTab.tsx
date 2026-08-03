@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Stack, Text, Button, Group, Paper, Code, ScrollArea, Loader, Alert, Badge, Table,
+  Stack, Text, Button, Group, Paper, ScrollArea, Loader, Alert, Badge, Box,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useRootStore } from '@/stores';
 import {
   diffRevisions,
   formatDiffValue,
-  unwrapSnapshot,
+  humanizeCommand,
   type DiffEntry,
 } from '@/utils/revisionDiff';
 
@@ -27,9 +27,53 @@ function kindLabel(kind: DiffEntry['kind']): string {
 }
 
 function kindColor(kind: DiffEntry['kind']): string {
-  if (kind === 'added') return 'green';
+  if (kind === 'added') return 'teal';
   if (kind === 'removed') return 'red';
-  return 'yellow';
+  return 'blue';
+}
+
+function ChangeCard({ entry }: { entry: DiffEntry }) {
+  const beforeText = entry.before === undefined ? null : formatDiffValue(entry.before);
+  const afterText = entry.after === undefined ? null : formatDiffValue(entry.after);
+  const summaryOnly = entry.kind === 'changed' && beforeText == null && afterText != null;
+
+  return (
+    <Paper withBorder p="sm" radius="md" bg="var(--mantine-color-body)">
+      <Group justify="space-between" mb={8} wrap="nowrap" align="flex-start">
+        <Text size="sm" fw={600} style={{ lineHeight: 1.35 }}>
+          {entry.label}
+        </Text>
+        <Badge size="sm" color={kindColor(entry.kind)} variant="light" style={{ flexShrink: 0 }}>
+          {kindLabel(entry.kind)}
+        </Badge>
+      </Group>
+      <Stack gap={6}>
+        {summaryOnly && (
+          <Text size="sm" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            {afterText}
+          </Text>
+        )}
+        {!summaryOnly && beforeText != null && (
+          <Box>
+            <Text size="xs" c="dimmed" mb={2}>Было</Text>
+            <Text size="sm" c="dimmed" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {beforeText}
+            </Text>
+          </Box>
+        )}
+        {!summaryOnly && afterText != null && (
+          <Box>
+            <Text size="xs" c="dimmed" mb={2}>
+              {entry.kind === 'added' ? 'Значение' : 'Стало'}
+            </Text>
+            <Text size="sm" fw={500} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {afterText}
+            </Text>
+          </Box>
+        )}
+      </Stack>
+    </Paper>
+  );
 }
 
 export function EntityHistoryTab({
@@ -43,6 +87,7 @@ export function EntityHistoryTab({
   const [rows, setRows] = useState<RevRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedRev, setSelectedRev] = useState<number | null>(null);
+  const [selectedMeta, setSelectedMeta] = useState<RevRow | null>(null);
   const [currentSnap, setCurrentSnap] = useState<unknown>(null);
   const [previousSnap, setPreviousSnap] = useState<unknown>(null);
   const [previousRev, setPreviousRev] = useState<number | null>(null);
@@ -68,6 +113,7 @@ export function EntityHistoryTab({
 
   useEffect(() => {
     setSelectedRev(null);
+    setSelectedMeta(null);
     setCurrentSnap(null);
     setPreviousSnap(null);
     setPreviousRev(null);
@@ -80,7 +126,9 @@ export function EntityHistoryTab({
   );
 
   async function view(revision: number) {
+    const meta = rows.find((r) => r.revision === revision) || null;
     setSelectedRev(revision);
+    setSelectedMeta(meta);
     setViewLoading(true);
     try {
       const older = rows
@@ -117,6 +165,7 @@ export function EntityHistoryTab({
       setCurrentSnap(null);
       setPreviousSnap(null);
       setSelectedRev(null);
+      setSelectedMeta(null);
       setPreviousRev(null);
       await load();
     } catch (e: any) {
@@ -130,26 +179,32 @@ export function EntityHistoryTab({
   return (
     <Stack gap="sm">
       <Group justify="space-between">
-        <Text size="sm" c="dimmed">Ревизии сущности</Text>
+        <Text size="sm" c="dimmed">История изменений</Text>
         <Button size="compact-xs" variant="default" onClick={() => void load()}>Обновить</Button>
       </Group>
-      {!rows.length && <Text size="sm" c="dimmed">Пока нет сохранённых ревизий</Text>}
+      {!rows.length && <Text size="sm" c="dimmed">Пока нет сохранённых изменений</Text>}
       <Stack gap={6}>
         {rows.map((r) => (
           <Paper key={r.id} withBorder p="xs" radius="sm">
-            <Group justify="space-between" wrap="nowrap">
-              <div>
-                <Group gap={6}>
-                  <Badge size="sm" variant="light">r{r.revision}</Badge>
-                  {r.reason && <Badge size="sm" color="gray">{r.reason}</Badge>}
-                  <Text size="xs" c="dimmed">{r.command || '—'}</Text>
-                </Group>
+            <Group justify="space-between" wrap="nowrap" align="flex-start">
+              <div style={{ minWidth: 0 }}>
+                <Text size="sm" fw={500} truncate>
+                  {humanizeCommand(r.command)}
+                </Text>
                 <Text size="xs" c="dimmed">
-                  {r.actor || '—'} · {new Date(r.created_at).toLocaleString()}
+                  {r.actor || 'неизвестно'}
+                  {' · '}
+                  {new Date(r.created_at).toLocaleString()}
+                  {' · '}
+                  r{r.revision}
                 </Text>
               </div>
-              <Group gap={4}>
-                <Button size="compact-xs" variant="light" onClick={() => void view(r.revision)}>
+              <Group gap={4} style={{ flexShrink: 0 }}>
+                <Button
+                  size="compact-xs"
+                  variant={selectedRev === r.revision ? 'filled' : 'light'}
+                  onClick={() => void view(r.revision)}
+                >
                   Смотреть
                 </Button>
                 {r.reason !== 'import' && (
@@ -164,82 +219,37 @@ export function EntityHistoryTab({
       </Stack>
 
       {selectedRev != null && (
-        <Paper withBorder p="sm" radius="sm">
-          <Group justify="space-between" mb={8}>
-            <Text size="sm" fw={600}>
-              Ревизия r{selectedRev}
-              {previousRev != null ? ` · изменения относительно r${previousRev}` : ' · первая версия'}
-            </Text>
+        <Paper withBorder p="sm" radius="md">
+          <Group justify="space-between" mb="sm" wrap="wrap">
+            <div>
+              <Text size="sm" fw={600}>
+                {selectedMeta ? humanizeCommand(selectedMeta.command) : `Ревизия r${selectedRev}`}
+              </Text>
+              <Text size="xs" c="dimmed">
+                {previousRev != null
+                  ? `Что изменилось с версии r${previousRev}`
+                  : 'Первая сохранённая версия'}
+              </Text>
+            </div>
             {viewLoading && <Loader size="xs" />}
           </Group>
 
           {!viewLoading && (
-            <Stack gap="md">
-              <div>
-                <Text size="sm" fw={600} mb={6}>Внесённые изменения</Text>
-                {!changes.length ? (
-                  <Text size="sm" c="dimmed">
-                    {previousRev == null
-                      ? 'Нет предыдущей ревизии для сравнения — это первая запись.'
-                      : 'Отличий от предыдущей ревизии не найдено.'}
-                  </Text>
-                ) : (
-                  <ScrollArea.Autosize mah={280}>
-                    <Table striped highlightOnHover withTableBorder withColumnBorders fz="xs">
-                      <Table.Thead>
-                        <Table.Tr>
-                          <Table.Th>Поле</Table.Th>
-                          <Table.Th w={90}>Тип</Table.Th>
-                          <Table.Th>Было</Table.Th>
-                          <Table.Th>Стало</Table.Th>
-                        </Table.Tr>
-                      </Table.Thead>
-                      <Table.Tbody>
-                        {changes.map((c) => (
-                          <Table.Tr key={`${c.kind}:${c.path}`}>
-                            <Table.Td>
-                              <Text size="xs" ff="monospace">{c.path}</Text>
-                            </Table.Td>
-                            <Table.Td>
-                              <Badge size="xs" color={kindColor(c.kind)} variant="light">
-                                {kindLabel(c.kind)}
-                              </Badge>
-                            </Table.Td>
-                            <Table.Td>
-                              <Code block style={{ whiteSpace: 'pre-wrap', maxWidth: 280 }}>
-                                {c.kind === 'added' ? '—' : formatDiffValue(c.before)}
-                              </Code>
-                            </Table.Td>
-                            <Table.Td>
-                              <Code block style={{ whiteSpace: 'pre-wrap', maxWidth: 280 }}>
-                                {c.kind === 'removed' ? '—' : formatDiffValue(c.after)}
-                              </Code>
-                            </Table.Td>
-                          </Table.Tr>
-                        ))}
-                      </Table.Tbody>
-                    </Table>
-                  </ScrollArea.Autosize>
-                )}
-              </div>
-
-              <div>
-                <Text size="sm" fw={600} mb={6}>
-                  {previousRev != null
-                    ? `Предыдущая версия (r${previousRev})`
-                    : 'Предыдущая версия'}
-                </Text>
-                {previousSnap == null ? (
-                  <Text size="sm" c="dimmed">Нет предыдущей ревизии (создание сущности).</Text>
-                ) : (
-                  <ScrollArea h={220}>
-                    <Code block style={{ whiteSpace: 'pre-wrap' }}>
-                      {JSON.stringify(unwrapSnapshot(previousSnap), null, 2)}
-                    </Code>
-                  </ScrollArea>
-                )}
-              </div>
-            </Stack>
+            !changes.length ? (
+              <Text size="sm" c="dimmed">
+                {previousRev == null
+                  ? 'Содержимое совпадает с пустым состоянием или поля ещё не заполнены.'
+                  : 'Существенных отличий от предыдущей версии нет.'}
+              </Text>
+            ) : (
+              <ScrollArea.Autosize mah={420} offsetScrollbars>
+                <Stack gap="sm">
+                  {changes.map((c) => (
+                    <ChangeCard key={`${c.kind}:${c.path}`} entry={c} />
+                  ))}
+                </Stack>
+              </ScrollArea.Autosize>
+            )
           )}
         </Paper>
       )}
