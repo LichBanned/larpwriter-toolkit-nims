@@ -1,5 +1,10 @@
 export type DiffKind = 'added' | 'removed' | 'changed';
 
+export type TextDiffPart = {
+  type: 'equal' | 'add' | 'del';
+  text: string;
+};
+
 export type DiffEntry = {
   path: string;
   /** Human-readable field title */
@@ -7,6 +12,8 @@ export type DiffEntry = {
   kind: DiffKind;
   before?: unknown;
   after?: unknown;
+  /** Word-level parts when both sides are text */
+  textParts?: TextDiffPart[];
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -159,6 +166,122 @@ export function humanizeCommand(command?: string | null): string {
   return COMMAND_LABELS[command] || command;
 }
 
+function tokenize(text: string): string[] {
+  return text.match(/\s+|[^\s]+/g) || [];
+}
+
+/**
+ * Word-level LCS diff. Highlights exactly which fragments were removed/added.
+ */
+export function diffText(before: string, after: string): TextDiffPart[] {
+  if (before === after) return before ? [{ type: 'equal', text: before }] : [];
+  if (!before) return after ? [{ type: 'add', text: after }] : [];
+  if (!after) return before ? [{ type: 'del', text: before }] : [];
+
+  const a = tokenize(before);
+  const b = tokenize(after);
+  // Cap cost for huge texts — fall back to prefix/suffix + middle replace
+  if (a.length * b.length > 400_000 || a.length > 2500 || b.length > 2500) {
+    return diffTextCoarse(before, after);
+  }
+
+  const n = a.length;
+  const m = b.length;
+  const dp: Uint16Array[] = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j]
+        ? (dp[i + 1][j + 1] + 1) as number
+        : Math.max(dp[i + 1][j], dp[i][j + 1]) as number;
+    }
+  }
+
+  const raw: TextDiffPart[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      raw.push({ type: 'equal', text: a[i] });
+      i += 1;
+      j += 1;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      raw.push({ type: 'del', text: a[i] });
+      i += 1;
+    } else {
+      raw.push({ type: 'add', text: b[j] });
+      j += 1;
+    }
+  }
+  while (i < n) {
+    raw.push({ type: 'del', text: a[i] });
+    i += 1;
+  }
+  while (j < m) {
+    raw.push({ type: 'add', text: b[j] });
+    j += 1;
+  }
+
+  return mergeParts(collapseEqualParts(raw));
+}
+
+function diffTextCoarse(before: string, after: string): TextDiffPart[] {
+  let prefix = 0;
+  const maxPref = Math.min(before.length, after.length);
+  while (prefix < maxPref && before[prefix] === after[prefix]) prefix += 1;
+  // avoid splitting UTF-16 surrogate / mid-word: back off to whitespace
+  while (prefix > 0 && before[prefix - 1] !== ' ' && before[prefix - 1] !== '\n') prefix -= 1;
+
+  let suffix = 0;
+  const maxSuf = Math.min(before.length - prefix, after.length - prefix);
+  while (
+    suffix < maxSuf
+    && before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
+  ) {
+    suffix += 1;
+  }
+  while (suffix > 0) {
+    const ch = before[before.length - suffix];
+    if (ch === ' ' || ch === '\n') break;
+    suffix -= 1;
+  }
+
+  const parts: TextDiffPart[] = [];
+  if (prefix) parts.push({ type: 'equal', text: before.slice(0, prefix) });
+  const del = before.slice(prefix, before.length - suffix);
+  const add = after.slice(prefix, after.length - suffix);
+  if (del) parts.push({ type: 'del', text: del });
+  if (add) parts.push({ type: 'add', text: add });
+  if (suffix) parts.push({ type: 'equal', text: before.slice(before.length - suffix) });
+  return mergeParts(collapseEqualParts(parts));
+}
+
+function mergeParts(parts: TextDiffPart[]): TextDiffPart[] {
+  const out: TextDiffPart[] = [];
+  for (const p of parts) {
+    if (!p.text) continue;
+    const last = out[out.length - 1];
+    if (last && last.type === p.type) last.text += p.text;
+    else out.push({ ...p });
+  }
+  return out;
+}
+
+/** Collapse long unchanged middle stretches so the UI focuses on edits. */
+function collapseEqualParts(parts: TextDiffPart[]): TextDiffPart[] {
+  const MAX_EDGE = 80;
+  return parts.map((p) => {
+    if (p.type !== 'equal' || p.text.length <= MAX_EDGE * 2 + 5) return p;
+    const head = p.text.slice(0, MAX_EDGE);
+    const tail = p.text.slice(-MAX_EDGE);
+    return { type: 'equal', text: `${head} … ${tail}` };
+  });
+}
+
+export function collectedText(parts: TextDiffPart[] | undefined, type: 'add' | 'del'): string {
+  if (!parts) return '';
+  return parts.filter((p) => p.type === type).map((p) => p.text).join('').trim();
+}
+
 /** Short human text for a value; never dump huge JSON blobs. */
 export function formatDiffValue(v: unknown): string {
   if (v === undefined) return '—';
@@ -168,7 +291,7 @@ export function formatDiffValue(v: unknown): string {
   if (typeof v === 'string') {
     const t = v.trim();
     if (!t) return 'пусто';
-    if (t.length > 280) return `${t.slice(0, 280)}…`;
+    if (t.length > 400) return `${t.slice(0, 400)}…`;
     return t;
   }
   if (Array.isArray(v)) {
@@ -176,7 +299,6 @@ export function formatDiffValue(v: unknown): string {
     if (v.every((x) => typeof x === 'string' || typeof x === 'number')) {
       return v.map(String).join(', ');
     }
-    // list of events / objects — compact labels
     const labels = v.slice(0, 8).map((item, i) => {
       if (!isPlainObject(item)) return String(item);
       const title = item.name || item.eventTitle || item.text || item.characterName;
@@ -193,7 +315,6 @@ export function formatDiffValue(v: unknown): string {
     if (v.deleted) return 'удалено';
     const keys = Object.keys(v);
     if (keys.length === 0) return 'пусто';
-    // Prefer common text fields
     for (const k of ['text', 'name', 'description', 'bio']) {
       if (typeof v[k] === 'string' && (v[k] as string).trim()) {
         return formatDiffValue(v[k]);
@@ -212,50 +333,114 @@ export function formatDiffValue(v: unknown): string {
   }
 }
 
-function summarizeArrayChange(before: unknown, after: unknown): DiffEntry | null {
-  if (!Array.isArray(before) && !Array.isArray(after)) return null;
+function itemLabel(item: unknown, idx: number): string {
+  if (isPlainObject(item)) {
+    const k = item.name || item.eventTitle || item.id || item.characterName;
+    if (typeof k === 'string' && k.trim()) {
+      const t = k.trim();
+      return t.length > 48 ? `${t.slice(0, 48)}…` : t;
+    }
+  }
+  return `элемент ${idx + 1}`;
+}
+
+function pickKey(item: unknown, idx: number): string {
+  if (isPlainObject(item)) {
+    const k = item.name || item.eventTitle || item.id || item.characterName;
+    if (typeof k === 'string' && k) return k;
+  }
+  return `#${idx}`;
+}
+
+function makeStringEntry(
+  path: string,
+  label: string,
+  kind: DiffKind,
+  before?: unknown,
+  after?: unknown,
+): DiffEntry {
+  const entry: DiffEntry = {
+    path, label, kind, before, after,
+  };
+  if (kind === 'changed' && typeof before === 'string' && typeof after === 'string') {
+    entry.textParts = diffText(before, after);
+  }
+  return entry;
+}
+
+/** Expand object-array diffs into per-item field changes with text highlights. */
+function expandObjectArrayDiffs(
+  path: string,
+  before: unknown,
+  after: unknown,
+): DiffEntry[] {
   const a = Array.isArray(before) ? before : [];
   const b = Array.isArray(after) ? after : [];
-  if (same(a, b)) return null;
+  const mapA = new Map<string, { item: unknown; idx: number }>();
+  const mapB = new Map<string, { item: unknown; idx: number }>();
+  a.forEach((item, i) => mapA.set(pickKey(item, i), { item, idx: i }));
+  b.forEach((item, i) => mapB.set(pickKey(item, i), { item, idx: i }));
 
-  // Primitive lists
-  if (
-    a.every((x) => x === null || typeof x !== 'object')
-    && b.every((x) => x === null || typeof x !== 'object')
-  ) {
-    return null; // fall through to leaf flatten
+  const entries: DiffEntry[] = [];
+  const baseLabel = humanizePath(path);
+
+  for (const key of mapB.keys()) {
+    if (mapA.has(key)) continue;
+    const { item, idx } = mapB.get(key)!;
+    entries.push(makeStringEntry(
+      `${path}.${key}`,
+      `${baseLabel} → «${itemLabel(item, idx)}»`,
+      'added',
+      undefined,
+      item,
+    ));
   }
-
-  const pickKey = (item: unknown, idx: number): string => {
-    if (isPlainObject(item)) {
-      const k = item.name || item.eventTitle || item.id || item.characterName;
-      if (typeof k === 'string' && k) return k;
+  for (const key of mapA.keys()) {
+    if (mapB.has(key)) continue;
+    const { item, idx } = mapA.get(key)!;
+    entries.push(makeStringEntry(
+      `${path}.${key}`,
+      `${baseLabel} → «${itemLabel(item, idx)}»`,
+      'removed',
+      item,
+      undefined,
+    ));
+  }
+  for (const key of mapB.keys()) {
+    if (!mapA.has(key)) continue;
+    const left = mapA.get(key)!;
+    const right = mapB.get(key)!;
+    if (same(left.item, right.item)) continue;
+    const flatA = flatten(left.item ?? {});
+    const flatB = flatten(right.item ?? {});
+    const fields = new Set([...Object.keys(flatA), ...Object.keys(flatB)]);
+    let fieldChanges = 0;
+    for (const field of [...fields].sort()) {
+      const bv = Object.prototype.hasOwnProperty.call(flatA, field) ? flatA[field] : undefined;
+      const av = Object.prototype.hasOwnProperty.call(flatB, field) ? flatB[field] : undefined;
+      if (same(bv, av)) continue;
+      if (isEmptyValue(bv) && isEmptyValue(av)) continue;
+      fieldChanges += 1;
+      const fieldLabel = `${baseLabel} → «${itemLabel(right.item, right.idx)}» → ${humanizePath(field)}`;
+      if (bv === undefined) {
+        entries.push(makeStringEntry(`${path}.${key}.${field}`, fieldLabel, 'added', undefined, av));
+      } else if (av === undefined) {
+        entries.push(makeStringEntry(`${path}.${key}.${field}`, fieldLabel, 'removed', bv, undefined));
+      } else {
+        entries.push(makeStringEntry(`${path}.${key}.${field}`, fieldLabel, 'changed', bv, av));
+      }
     }
-    return `#${idx}`;
-  };
-
-  const mapA = new Map<string, unknown>();
-  a.forEach((item, i) => mapA.set(pickKey(item, i), item));
-  const mapB = new Map<string, unknown>();
-  b.forEach((item, i) => mapB.set(pickKey(item, i), item));
-
-  const added = [...mapB.keys()].filter((k) => !mapA.has(k));
-  const removed = [...mapA.keys()].filter((k) => !mapB.has(k));
-  const changed = [...mapB.keys()].filter((k) => mapA.has(k) && !same(mapA.get(k), mapB.get(k)));
-
-  const bits: string[] = [];
-  if (added.length) bits.push(`добавлено: ${added.slice(0, 5).join(', ')}${added.length > 5 ? '…' : ''}`);
-  if (removed.length) bits.push(`удалено: ${removed.slice(0, 5).join(', ')}${removed.length > 5 ? '…' : ''}`);
-  if (changed.length) bits.push(`изменено: ${changed.slice(0, 5).join(', ')}${changed.length > 5 ? '…' : ''}`);
-  if (!bits.length) bits.push(`было ${a.length}, стало ${b.length}`);
-
-  return {
-    path: '',
-    label: '',
-    kind: 'changed',
-    before: undefined,
-    after: bits.join('; '),
-  };
+    if (fieldChanges === 0) {
+      entries.push(makeStringEntry(
+        `${path}.${key}`,
+        `${baseLabel} → «${itemLabel(right.item, right.idx)}»`,
+        'changed',
+        left.item,
+        right.item,
+      ));
+    }
+  }
+  return entries;
 }
 
 /**
@@ -285,41 +470,23 @@ export function diffRevisions(previous: unknown, current: unknown): DiffEntry[] 
     const after = hasB ? b[path] : undefined;
 
     if (hasA && hasB && same(before, after)) continue;
-
-    // On create, skip empty new fields — noise
     if (isFirst && !hasA && hasB && isEmptyValue(after)) continue;
-    // Skip empty→empty noise
     if (isEmptyValue(before) && isEmptyValue(after)) continue;
 
-    // Prefer human summary for object arrays
+    // Object arrays → per-item / per-field diffs with text highlights
     if ((Array.isArray(before) || Array.isArray(after))
       && !(Array.isArray(before) && before.every((x) => x === null || typeof x !== 'object')
         && Array.isArray(after) && after.every((x) => x === null || typeof x !== 'object'))) {
-      const summary = summarizeArrayChange(before ?? [], after ?? []);
-      if (summary) {
-        entries.push({
-          path,
-          label: humanizePath(path),
-          kind: !hasA ? 'added' : !hasB ? 'removed' : 'changed',
-          before: !hasB ? formatDiffValue(before) : summary.before,
-          after: !hasA ? formatDiffValue(after) : summary.after,
-        });
-        continue;
-      }
+      entries.push(...expandObjectArrayDiffs(path, before ?? [], after ?? []));
+      continue;
     }
 
     if (!hasA && hasB) {
-      entries.push({
-        path, label: humanizePath(path), kind: 'added', after,
-      });
+      entries.push(makeStringEntry(path, humanizePath(path), 'added', undefined, after));
     } else if (hasA && !hasB) {
-      entries.push({
-        path, label: humanizePath(path), kind: 'removed', before,
-      });
+      entries.push(makeStringEntry(path, humanizePath(path), 'removed', before, undefined));
     } else {
-      entries.push({
-        path, label: humanizePath(path), kind: 'changed', before, after,
-      });
+      entries.push(makeStringEntry(path, humanizePath(path), 'changed', before, after));
     }
   }
   return entries;

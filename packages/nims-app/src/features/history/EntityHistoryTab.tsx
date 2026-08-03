@@ -5,10 +5,12 @@ import {
 import { notifications } from '@mantine/notifications';
 import { useRootStore } from '@/stores';
 import {
+  collectedText,
   diffRevisions,
   formatDiffValue,
   humanizeCommand,
   type DiffEntry,
+  type TextDiffPart,
 } from '@/utils/revisionDiff';
 
 type RevRow = {
@@ -32,10 +34,62 @@ function kindColor(kind: DiffEntry['kind']): string {
   return 'blue';
 }
 
+function TextDiffView({ parts }: { parts: TextDiffPart[] }) {
+  return (
+    <Text size="sm" component="div" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.55 }}>
+      {parts.map((p, i) => {
+        if (p.type === 'equal') {
+          return (
+            <Text key={i} span c="dimmed">
+              {p.text}
+            </Text>
+          );
+        }
+        if (p.type === 'del') {
+          return (
+            <Text
+              key={i}
+              span
+              fw={600}
+              c="red"
+              style={{
+                textDecoration: 'line-through',
+                background: 'var(--mantine-color-red-light)',
+                borderRadius: 3,
+                padding: '0 2px',
+              }}
+            >
+              {p.text}
+            </Text>
+          );
+        }
+        return (
+          <Text
+            key={i}
+            span
+            fw={600}
+            c="teal"
+            style={{
+              background: 'var(--mantine-color-teal-light)',
+              borderRadius: 3,
+              padding: '0 2px',
+            }}
+          >
+            {p.text}
+          </Text>
+        );
+      })}
+    </Text>
+  );
+}
+
 function ChangeCard({ entry }: { entry: DiffEntry }) {
+  const hasTextDiff = !!entry.textParts?.length
+    && entry.textParts.some((p) => p.type === 'add' || p.type === 'del');
+  const removed = collectedText(entry.textParts, 'del');
+  const added = collectedText(entry.textParts, 'add');
   const beforeText = entry.before === undefined ? null : formatDiffValue(entry.before);
   const afterText = entry.after === undefined ? null : formatDiffValue(entry.after);
-  const summaryOnly = entry.kind === 'changed' && beforeText == null && afterText != null;
 
   return (
     <Paper withBorder p="sm" radius="md" bg="var(--mantine-color-body)">
@@ -47,31 +101,56 @@ function ChangeCard({ entry }: { entry: DiffEntry }) {
           {kindLabel(entry.kind)}
         </Badge>
       </Group>
-      <Stack gap={6}>
-        {summaryOnly && (
-          <Text size="sm" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-            {afterText}
-          </Text>
-        )}
-        {!summaryOnly && beforeText != null && (
+
+      {hasTextDiff ? (
+        <Stack gap="sm">
           <Box>
-            <Text size="xs" c="dimmed" mb={2}>Было</Text>
-            <Text size="sm" c="dimmed" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-              {beforeText}
-            </Text>
+            <Text size="xs" c="dimmed" mb={4}>Изменения в тексте</Text>
+            <TextDiffView parts={entry.textParts!} />
           </Box>
-        )}
-        {!summaryOnly && afterText != null && (
-          <Box>
-            <Text size="xs" c="dimmed" mb={2}>
-              {entry.kind === 'added' ? 'Значение' : 'Стало'}
-            </Text>
-            <Text size="sm" fw={500} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-              {afterText}
-            </Text>
-          </Box>
-        )}
-      </Stack>
+          {(removed || added) && (
+            <Stack gap={6}>
+              {removed ? (
+                <Box>
+                  <Text size="xs" c="red" mb={2}>Убрано</Text>
+                  <Text size="sm" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {removed}
+                  </Text>
+                </Box>
+              ) : null}
+              {added ? (
+                <Box>
+                  <Text size="xs" c="teal" mb={2}>Добавлено</Text>
+                  <Text size="sm" fw={500} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {added}
+                  </Text>
+                </Box>
+              ) : null}
+            </Stack>
+          )}
+        </Stack>
+      ) : (
+        <Stack gap={6}>
+          {beforeText != null && (
+            <Box>
+              <Text size="xs" c="dimmed" mb={2}>Было</Text>
+              <Text size="sm" c="dimmed" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {beforeText}
+              </Text>
+            </Box>
+          )}
+          {afterText != null && (
+            <Box>
+              <Text size="xs" c="dimmed" mb={2}>
+                {entry.kind === 'added' ? 'Значение' : 'Стало'}
+              </Text>
+              <Text size="sm" fw={500} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {afterText}
+              </Text>
+            </Box>
+          )}
+        </Stack>
+      )}
     </Paper>
   );
 }

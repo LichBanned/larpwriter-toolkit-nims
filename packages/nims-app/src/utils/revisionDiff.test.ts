@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
+  collectedText,
   diffRevisions,
+  diffText,
   formatDiffValue,
   humanizeCommand,
   humanizePath,
@@ -46,23 +48,31 @@ describe('revisionDiff', () => {
     expect(humanizeCommand('updateProfileField')).toMatch(/профил/i);
   });
 
-  it('summarizes object-array changes without dumping JSON', () => {
+  it('shows exact added/removed text fragments', () => {
+    const parts = diffText('Привет мир', 'Привет новый мир');
+    expect(collectedText(parts, 'add')).toMatch(/новый/);
+    expect(collectedText(parts, 'del')).toBe('');
+
+    const removed = diffText('один два три', 'один три');
+    expect(collectedText(removed, 'del')).toMatch(/два/);
+  });
+
+  it('expands event field text changes with textParts', () => {
     const prev = {
       name: 'S',
       story: {
-        events: [{ name: 'A', text: 'one' }, { name: 'B', text: 'two' }],
+        events: [{ name: 'Завязка', text: 'он пришёл домой' }],
       },
     };
     const curr = {
       name: 'S',
       story: {
-        events: [{ name: 'A', text: 'ONE' }, { name: 'C', text: 'three' }],
+        events: [{ name: 'Завязка', text: 'он пришёл домой поздно' }],
       },
     };
     const diff = diffRevisions(prev, curr);
-    const ev = diff.find((d) => d.path === 'events');
-    expect(ev).toBeTruthy();
-    expect(String(ev?.after)).toMatch(/добавлено|изменено|удалено/);
-    expect(ev?.before).toBeUndefined();
+    const textChange = diff.find((d) => d.path.includes('text'));
+    expect(textChange?.textParts).toBeTruthy();
+    expect(collectedText(textChange?.textParts, 'add')).toMatch(/поздно/);
   });
 });
